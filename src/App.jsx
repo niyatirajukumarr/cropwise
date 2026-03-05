@@ -8,19 +8,15 @@ function generateOtp() {
 }
 
 async function sendOtpViaSms(phone, otp) {
-  if (FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt") {
-    // Dev mode — log to console instead of sending SMS
-    console.log(`%c[CropWise DEV] OTP for +91${phone}: ${otp}`, "background:#2a7a00;color:#fff;padding:4px 10px;border-radius:4px;font-size:14px;font-weight:bold;");
-    return { success: true, dev: true };
-  }
   try {
-    const res = await fetch(
-      `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_KEY}&variables_values=${otp}&route=otp&numbers=${phone}`,
-      { method: "GET", headers: { "cache-control": "no-cache" } }
-    );
+    const res = await fetch("/api/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, otp }),
+    });
     const data = await res.json();
-    return { success: data.return === true, message: data.message?.[0] || "Sent" };
-  } catch (err) {
+    return { success: data.success, message: data.message };
+  } catch {
     return { success: false, message: "Network error. Check your connection." };
   }
 }
