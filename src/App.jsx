@@ -122,7 +122,7 @@ export default function CropWise(){
         </nav>
         <div style={{padding:"16px 24px",borderTop:"1px solid #1e293b"}}><div style={{background:"#052e16",border:"1px solid #166534",borderRadius:10,padding:"10px 14px"}}><div style={{fontSize:11,color:"#4ade8099",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>Current Season</div><div style={{fontSize:14,fontWeight:700,color:"#4ade80",marginTop:3}}>🌾 Kharif 2025</div></div></div>
       </aside>
-      <main style={{marginLeft:240,flex:1,overflowY:"auto",minHeight:"100vh",position:"relative",zIndex:1}}>
+      <main style={{marginLeft:240,width:"calc(100vw - 240px)",overflowY:"auto",minHeight:"100vh",position:"relative",zIndex:1}}>
         <div className="fade" key={screen} style={{padding:"32px 36px 60px"}}><DesktopScreens {...props}/></div>
       </main>
     </div>
