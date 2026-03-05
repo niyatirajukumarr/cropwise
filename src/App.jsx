@@ -413,7 +413,7 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
 
   const otp = generateOtp();
 
-  const result = await sendOtpViaSms(phone, otp);
+  const result = await sendOtpViaSms(loginPhone, otp);
 
   if (result.success) {
     setGeneratedOtp(otp);
