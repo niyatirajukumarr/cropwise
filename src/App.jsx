@@ -449,11 +449,6 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
         </svg>
       </div>
       <div className="reg-card" style={{...rg.card,gap:14}}>
-        {FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt" && (
-          <div style={{background:"rgba(255,220,100,0.25)",border:"1px solid rgba(180,120,0,0.3)",borderRadius:10,padding:"8px 12px",fontSize:11,color:"#7a5010",fontWeight:600,lineHeight:1.5}}>
-            🛠 Dev mode — OTP will be printed in your browser console (F12 → Console). <br/>Add your Fast2SMS key to send real SMS.
-          </div>
-        )}
         <div style={{position:"relative"}}>
           <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-55%)",fontSize:15,zIndex:1,pointerEvents:"none"}}>📞</span>
           <input
@@ -622,12 +617,6 @@ function OtpScreen({ phone, onLogin, onNavigate, onBack }) {
           {phone ? `Sent to +91 ${phone}` : "Sent to your registered number"}
         </div>
       </div>
-
-      {FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt" && (
-        <div style={{position:"relative",zIndex:10,width:"88%",marginTop:10,background:"rgba(255,220,100,0.25)",border:"1px solid rgba(180,120,0,0.3)",borderRadius:10,padding:"8px 12px",fontSize:11,color:"#7a5010",fontWeight:600,lineHeight:1.5,textAlign:"center"}}>
-          🛠 Dev mode — check your browser console (F12) for the OTP
-        </div>
-      )}
 
       <div className="reg-card" style={{...rg.card,marginTop:16,alignItems:"center",gap:18}}>
         <div key={shakeKey} className={shakeKey?"shake":""} style={{display:"flex",gap:10,justifyContent:"center"}}>
