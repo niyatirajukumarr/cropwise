@@ -2021,9 +2021,12 @@ function MobileScreens(p) {
 //  APP ROOT 
 export default function App() {
   const [history, setHistory]       = useState(["splash"]);
-  const [registered, setRegistered] = useState(null);   // { name, phone }
+  const [registered, setRegistered] = useState(null);   
   const [loginPhone, setLoginPhone] = useState("");
   const [userName, setUserName]     = useState("");
+
+  const [generatedOtp, setGeneratedOtp] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const screen = history[history.length - 1];
   const goTo   = (s) => setHistory(prev => [...prev, s]);
