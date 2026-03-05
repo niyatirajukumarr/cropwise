@@ -1,7 +1,4 @@
-const FAST2SMS_KEY = "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt"; // ← paste your key here
-
 import { useState, useEffect, useCallback, useRef } from "react";
-
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -20,6 +17,21 @@ async function sendOtpViaSms(phone, otp) {
     return { success: false, message: "Network error. Check your connection." };
   }
 }
+
+const handleSendOtp = async () => {
+
+  const otp = generateOtp();   // create OTP
+
+  const result = await sendOtpViaSms(phone, otp); // send OTP to backend
+
+  if (result.success) {
+    setGeneratedOtp(otp);
+    alert("OTP sent to your phone");
+  } else {
+    alert(result.message);
+  }
+
+};
 
 function TopCropDeco() {
   return (
@@ -396,26 +408,22 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
   const [error, setError]       = useState("");
 
   const handleOtp = async () => {
-    setSubmitted(true);
-    setError("");
-    if (phone.length !== 10) return;
-    setLoading(true);
-    const otp = generateOtp();
-    const result = await sendOtpViaSms(phone, otp);
-    setLoading(false);
-    if (!result.success) {
-      setError(result.message || "Failed to send OTP. Try again.");
-      return;
-    }
-    // Store OTP + timestamp in module-level ref (not global, not storage)
-    LoginScreen._pendingOtp   = otp;
-    LoginScreen._pendingExp   = Date.now() + 5 * 60 * 1000; // 5 min expiry
-    LoginScreen._pendingPhone = phone;
-    if (result.dev) {
-      setError(""); // clear any previous error
-    }
-    onGetOtp && onGetOtp(phone);
-  };
+
+  setLoading(true);
+
+  const otp = generateOtp();
+
+  const result = await sendOtpViaSms(phone, otp);
+
+  if (result.success) {
+    setGeneratedOtp(otp);
+    alert("OTP sent to your phone");
+  } else {
+    alert(result.message);
+  }
+
+  setLoading(false);
+};
 
   return(
     <div style={rg.wrapper}>
