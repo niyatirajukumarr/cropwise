@@ -1,12 +1,30 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  CropWise — Full App
-//  Auth flow: Splash → Register → Login → OTP → Dashboard
-// ─────────────────────────────────────────────────────────────────────────────
+const FAST2SMS_KEY = "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt"; // ← paste your key here
+
 import { useState, useEffect, useCallback, useRef } from "react";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  AUTH — shared styles & decorations
-// ═══════════════════════════════════════════════════════════════════════════════
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function sendOtpViaSms(phone, otp) {
+  if (FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt") {
+    // Dev mode — log to console instead of sending SMS
+    console.log(`%c[CropWise DEV] OTP for +91${phone}: ${otp}`, "background:#2a7a00;color:#fff;padding:4px 10px;border-radius:4px;font-size:14px;font-weight:bold;");
+    return { success: true, dev: true };
+  }
+  try {
+    const res = await fetch(
+      `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_KEY}&variables_values=${otp}&route=otp&numbers=${phone}`,
+      { method: "GET", headers: { "cache-control": "no-cache" } }
+    );
+    const data = await res.json();
+    return { success: data.return === true, message: data.message?.[0] || "Sent" };
+  } catch (err) {
+    return { success: false, message: "Network error. Check your connection." };
+  }
+}
+
 function TopCropDeco() {
   return (
     <svg style={rg.topDeco} viewBox="0 0 120 80" fill="none">
@@ -61,7 +79,6 @@ function BottomScene() {
   );
 }
 
-// ─── Shared auth styles ───────────────────────────────────────────────────────
 const rg = {
   wrapper:{ position:"fixed",inset:0,width:"100%",height:"100%",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"'Lato',sans-serif" },
   bg:{ position:"absolute",inset:0,background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",zIndex:0 },
@@ -131,7 +148,7 @@ const AUTH_CSS = `
   .otp-btn:active{transform:scale(0.98)}
   .otp-btn:disabled{opacity:0.65;cursor:not-allowed;transform:none}
   .otp-box{
-    width:58px;height:64px;border-radius:14px;
+    width:52px;height:62px;border-radius:14px;
     border:1.8px solid rgba(80,130,30,0.35);background:rgba(255,252,242,0.92);
     font-family:'Cinzel',serif;font-size:26px;font-weight:700;
     color:#3a6200;text-align:center;outline:none;
@@ -150,11 +167,14 @@ const AUTH_CSS = `
   .verify-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(60,110,0,0.48)}
   .verify-btn:active{transform:scale(0.98)}
   .verify-btn:disabled{opacity:0.65;cursor:not-allowed;transform:none}
+  .resend-link{color:#b85c00;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .resend-link:disabled,.resend-link[disabled]{color:#aaa;cursor:not-allowed;text-decoration:none}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+  .shake{animation:shake 0.4s ease}
 `;
 
-// ═══════════════════════════════════════════════════════════════════════════════
 //  SPLASH SCREEN
-// ═══════════════════════════════════════════════════════════════════════════════
+
 function SplashScreen({ onFinish }) {
   const [phase, setPhase] = useState(0);
   useEffect(()=>{
@@ -305,9 +325,8 @@ const sp={
   nextArrow:{fontSize:22,color:"rgba(255,240,180,0.9)",lineHeight:1,marginTop:-1},
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
 //  REGISTER SCREEN
-// ═══════════════════════════════════════════════════════════════════════════════
+
 function RegisterScreen({ onSignUp, onNavigate, onBack }) {
   const [form,setForm]=useState({name:"",phone:"",password:"",confirm:""});
   const [focused,setFocused]=useState(null);
@@ -372,24 +391,34 @@ function RegisterScreen({ onSignUp, onNavigate, onBack }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  LOGIN SCREEN  — Simulated OTP (demo: use 1234)
-// ═══════════════════════════════════════════════════════════════════════════════
-function LoginScreen({ onGetOtp, onNavigate, onBack }) {
-  const [phone,setPhone]=useState("");
-  const [submitted,setSubmitted]=useState(false);
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState("");
+//  LOGIN SCREEN  — sends real OTP via Fast2SMS
 
-  const handleOtp=()=>{
-    setSubmitted(true);setError("");
-    if(phone.length!==10)return;
+function LoginScreen({ onGetOtp, onNavigate, onBack }) {
+  const [phone, setPhone]       = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+
+  const handleOtp = async () => {
+    setSubmitted(true);
+    setError("");
+    if (phone.length !== 10) return;
     setLoading(true);
-    setTimeout(()=>{
-      window._cwDemoOtp="1234";
-      setLoading(false);
-      onGetOtp&&onGetOtp(phone);
-    },1200);
+    const otp = generateOtp();
+    const result = await sendOtpViaSms(phone, otp);
+    setLoading(false);
+    if (!result.success) {
+      setError(result.message || "Failed to send OTP. Try again.");
+      return;
+    }
+    // Store OTP + timestamp in module-level ref (not global, not storage)
+    LoginScreen._pendingOtp   = otp;
+    LoginScreen._pendingExp   = Date.now() + 5 * 60 * 1000; // 5 min expiry
+    LoginScreen._pendingPhone = phone;
+    if (result.dev) {
+      setError(""); // clear any previous error
+    }
+    onGetOtp && onGetOtp(phone);
   };
 
   return(
@@ -401,6 +430,7 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
       <div className="reg-title" style={{...rg.titleWrap,paddingBottom:0}}>
         <div style={rg.logo}><span style={rg.cropWord}>Crop</span><span style={rg.wiseWord}>Wise</span></div>
         <div style={rg.heading}>Login</div>
+        <div style={rg.sub}>Enter your registered number</div>
       </div>
       <div style={{position:"relative",zIndex:10,margin:"18px 0 10px"}}>
         <svg viewBox="0 0 110 110" width="100" height="100">
@@ -415,14 +445,31 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
         </svg>
       </div>
       <div className="reg-card" style={{...rg.card,gap:14}}>
+        {FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt" && (
+          <div style={{background:"rgba(255,220,100,0.25)",border:"1px solid rgba(180,120,0,0.3)",borderRadius:10,padding:"8px 12px",fontSize:11,color:"#7a5010",fontWeight:600,lineHeight:1.5}}>
+            🛠 Dev mode — OTP will be printed in your browser console (F12 → Console). <br/>Add your Fast2SMS key to send real SMS.
+          </div>
+        )}
         <div style={{position:"relative"}}>
           <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-55%)",fontSize:15,zIndex:1,pointerEvents:"none"}}>📞</span>
-          <input className={`login-pill${submitted&&phone.length!==10?" error":""}`} placeholder="Phone number" type="tel" value={phone} onChange={e=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))}/>
+          <input
+            className={`login-pill${submitted&&phone.length!==10?" error":""}`}
+            placeholder="10-digit mobile number"
+            type="tel"
+            value={phone}
+            onChange={e=>{setPhone(e.target.value.replace(/\D/g,"").slice(0,10));setError("");}}
+          />
           {submitted&&phone.length!==10&&<div style={rg.errMsg}>Please enter a valid 10-digit number</div>}
-          {error&&<div style={rg.errMsg}>{error}</div>}
+          {error&&<div style={{...rg.errMsg,marginTop:6}}>{error}</div>}
         </div>
-        <div id="recaptcha-root" style={{display:"none"}}/>
-        <button className="otp-btn" onClick={handleOtp} disabled={loading}>{loading?"Sending OTP…":"Get OTP"}</button>
+        <button className="otp-btn" onClick={handleOtp} disabled={loading}>
+          {loading ? (
+            <span style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
+              <span style={{animation:"spin 1s linear infinite",display:"inline-block",fontSize:16}}>⟳</span>
+              Sending OTP…
+            </span>
+          ) : "Get OTP"}
+        </button>
         <div style={rg.loginRow}>Don't have an account?{" "}<span style={rg.loginLink} onClick={()=>onNavigate&&onNavigate("register")}>Register</span></div>
       </div>
       <div style={rg.bottomScene}>
@@ -454,64 +501,176 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  OTP SCREEN  — demo mode (OTP: 1234)
-// ═══════════════════════════════════════════════════════════════════════════════
-function OtpScreen({ onLogin, onNavigate, onBack }) {
-  const [otp,setOtp]=useState(["","","",""]);
-  const [submitted,setSubmitted]=useState(false);
-  const [loading,setLoading]=useState(false);
-  const [error,setError]=useState("");
-  const refs=useRef([...Array(4)].map(()=>({current:null})));
-  const handleChange=(i,val)=>{const v=val.replace(/\D/g,"").slice(-1);const next=[...otp];next[i]=v;setOtp(next);if(v&&i<3)refs.current[i+1].current?.focus();};
-  const handleKey=(i,e)=>{if(e.key==="Backspace"&&!otp[i]&&i>0)refs.current[i-1].current?.focus();};
-  const handleLogin=()=>{
-    setSubmitted(true);setError("");
-    const code=otp.join("");if(code.length<4)return;
-    setLoading(true);
-    setTimeout(()=>{
-      if(code===window._cwDemoOtp||code==="1234"){
-        window._cwDemoOtp=null;
-        setLoading(false);
-        onLogin&&onLogin();
-      }else{
-        setError("Wrong OTP. Please try 1234 (demo mode).");
-        setLoading(false);
-      }
-    },900);
+LoginScreen._pendingOtp   = null;
+LoginScreen._pendingExp   = null;
+LoginScreen._pendingPhone = null;
+
+//  OTP SCREEN  — verifies real 6-digit OTP with expiry + resend
+
+function OtpScreen({ phone, onLogin, onNavigate, onBack }) {
+  const OTP_LEN = 6;
+  const [otp, setOtp]           = useState(Array(OTP_LEN).fill(""));
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [shakeKey, setShakeKey] = useState(0);
+
+  const [resendCooldown, setResendCooldown] = useState(30);
+  const [resending, setResending]           = useState(false);
+  useEffect(()=>{
+    if (resendCooldown <= 0) return;
+    const id = setInterval(()=>setResendCooldown(c=>c-1), 1000);
+    return ()=>clearInterval(id);
+  }, [resendCooldown]);
+
+  const boxRefs = useRef(Array(OTP_LEN).fill(null).map(()=>({ current: null })));
+
+  const handleChange = (i, val) => {
+    if (val.length > 1) {
+      const digits = val.replace(/\D/g,"").slice(0, OTP_LEN).split("");
+      const next = [...otp];
+      digits.forEach((d, idx) => { if (i+idx < OTP_LEN) next[i+idx] = d; });
+      setOtp(next);
+      const focusIdx = Math.min(i + digits.length, OTP_LEN - 1);
+      boxRefs.current[focusIdx]?.current?.focus();
+      return;
+    }
+    const v = val.replace(/\D/g,"").slice(-1);
+    const next = [...otp]; next[i] = v; setOtp(next);
+    if (v && i < OTP_LEN - 1) boxRefs.current[i+1]?.current?.focus();
   };
-  const showErr=submitted&&otp.some(d=>d==="");
+
+  const handleKey = (i, e) => {
+    if (e.key === "Backspace" && !otp[i] && i > 0) {
+      boxRefs.current[i-1]?.current?.focus();
+    }
+  };
+
+  const handleLogin = () => {
+    setSubmitted(true);
+    setError("");
+    const code = otp.join("");
+    if (code.length < OTP_LEN) return;
+    setLoading(true);
+
+    setTimeout(() => {
+      const stored  = LoginScreen._pendingOtp;
+      const expiry  = LoginScreen._pendingExp;
+      const expired = !expiry || Date.now() > expiry;
+
+      if (!stored) {
+        setError("Session expired. Please go back and request a new OTP.");
+        setLoading(false); return;
+      }
+      if (expired) {
+        setError("OTP has expired (5 min limit). Please request a new one.");
+        LoginScreen._pendingOtp = null;
+        setLoading(false); return;
+      }
+      if (code !== stored) {
+        setError("Incorrect OTP. Please check and try again.");
+        setOtp(Array(OTP_LEN).fill(""));
+        boxRefs.current[0]?.current?.focus();
+        setShakeKey(k => k+1);
+        setLoading(false); return;
+      }
+
+      LoginScreen._pendingOtp   = null;
+      LoginScreen._pendingExp   = null;
+      LoginScreen._pendingPhone = null;
+      setLoading(false);
+      onLogin && onLogin();
+    }, 600);
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || resending) return;
+    setResending(true);
+    setError("");
+    const targetPhone = phone || LoginScreen._pendingPhone;
+    if (!targetPhone) { setError("Phone number missing. Go back and try again."); setResending(false); return; }
+    const newOtp = generateOtp();
+    const result = await sendOtpViaSms(targetPhone, newOtp);
+    if (result.success) {
+      LoginScreen._pendingOtp = newOtp;
+      LoginScreen._pendingExp = Date.now() + 5 * 60 * 1000;
+      setOtp(Array(OTP_LEN).fill(""));
+      boxRefs.current[0]?.current?.focus();
+      setResendCooldown(30);
+    } else {
+      setError(result.message || "Resend failed. Try again.");
+    }
+    setResending(false);
+  };
+
+  const showErr = submitted && otp.some(d => d === "");
+
   return(
     <div style={rg.wrapper}>
-      <style>{AUTH_CSS}</style>
+      <style>{AUTH_CSS + `@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={rg.bg}/><div style={rg.bgGlow}/>
       <TopCropDeco/>
       {onBack && <button style={rg.backBtn} onClick={onBack} aria-label="Go back">‹</button>}
       <div className="reg-title" style={{...rg.titleWrap,paddingBottom:0}}>
         <div style={rg.logo}><span style={rg.cropWord}>Crop</span><span style={rg.wiseWord}>Wise</span></div>
         <div style={rg.heading}>Enter OTP</div>
-        <div style={rg.sub}>Sent to your registered number</div>
+        <div style={rg.sub}>
+          {phone ? `Sent to +91 ${phone}` : "Sent to your registered number"}
+        </div>
       </div>
-      <div className="reg-card" style={{...rg.card,marginTop:28,alignItems:"center",gap:18}}>
-        <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+
+      {FAST2SMS_KEY === "JxpyOBsahcfS2vN9RMi4UowujmTVQFtLPkd7g3zDAXZlCE8KWef17x83TURYdrpZMKIavz9Q0AbXWlNt" && (
+        <div style={{position:"relative",zIndex:10,width:"88%",marginTop:10,background:"rgba(255,220,100,0.25)",border:"1px solid rgba(180,120,0,0.3)",borderRadius:10,padding:"8px 12px",fontSize:11,color:"#7a5010",fontWeight:600,lineHeight:1.5,textAlign:"center"}}>
+          🛠 Dev mode — check your browser console (F12) for the OTP
+        </div>
+      )}
+
+      <div className="reg-card" style={{...rg.card,marginTop:16,alignItems:"center",gap:18}}>
+        <div key={shakeKey} className={shakeKey?"shake":""} style={{display:"flex",gap:10,justifyContent:"center"}}>
           {otp.map((digit,i)=>(
-            <input key={i} ref={el=>{refs.current[i].current=el;}}
-              className={`otp-box${digit?" filled":""}${showErr&&!digit?" err":""}`}
-              type="tel" inputMode="numeric" maxLength={1} value={digit}
-              onChange={e=>handleChange(i,e.target.value)} onKeyDown={e=>handleKey(i,e)} onFocus={e=>e.target.select()}/>
+            <input
+              key={i}
+              ref={el=>{ boxRefs.current[i].current=el; }}
+              className={`otp-box${digit?" filled":""}${(showErr&&!digit)||error?" err":""}`}
+              type="tel"
+              inputMode="numeric"
+              maxLength={OTP_LEN}
+              value={digit}
+              onChange={e=>handleChange(i,e.target.value)}
+              onKeyDown={e=>handleKey(i,e)}
+              onFocus={e=>e.target.select()}
+            />
           ))}
         </div>
-        {showErr&&<div style={{...rg.errMsg,textAlign:"center"}}>Please enter all 4 digits</div>}
-        {error&&<div style={{...rg.errMsg,textAlign:"center"}}>{error}</div>}
-        <button className="verify-btn" onClick={handleLogin} disabled={loading}>{loading?"Verifying…":"Login"}</button>
-        <div style={rg.loginRow}>Didn't receive OTP?{" "}<span style={rg.loginLink} onClick={()=>onNavigate&&onNavigate("login")}>Resend</span></div>
+
+        {showErr && <div style={{...rg.errMsg,textAlign:"center"}}>Please enter all {OTP_LEN} digits</div>}
+        {error   && <div style={{...rg.errMsg,textAlign:"center"}}>{error}</div>}
+
+        <button className="verify-btn" onClick={handleLogin} disabled={loading} style={{width:"100%"}}>
+          {loading ? (
+            <span style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
+              <span style={{animation:"spin 1s linear infinite",display:"inline-block",fontSize:16}}>⟳</span>
+              Verifying…
+            </span>
+          ) : "Login"}
+        </button>
+
+        <div style={rg.loginRow}>
+          Didn't receive OTP?{" "}
+          {resendCooldown > 0
+            ? <span style={{color:"#9a8060",fontSize:13}}>Resend in {resendCooldown}s</span>
+            : <span className="resend-link" onClick={handleResend} style={{pointerEvents:resending?"none":"auto"}}>
+                {resending ? "Sending…" : "Resend OTP"}
+              </span>
+          }
+        </div>
       </div>
       <BottomScene/>
     </div>
   );
 }
 
-// ── TRANSLATIONS ────────────────────────────────────────────────
+// TRANSLATIONS 
 const T = {
   en: {
     appTagline: "Smart Farming Assistant",
@@ -569,7 +728,7 @@ const T = {
     topPick: "⭐ TOP PICK",
     pricesUpdated: "Prices:",
     addApiKey: "Add data.gov.in API key for live mandi prices",
-    apiKeyInstructions: "Open src/App.jsx → replace YOUR_DATA_GOV_IN_KEY at the top.",
+    apiKeyInstructions: "Open src/App.jsx → replace 579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537 at the top.",
     weatherLive: "Weather ✅ LIVE",
     fetchingWeather: "⟳ Fetching weather...",
     refreshPrices: "⟳ Refresh",
@@ -582,7 +741,6 @@ const T = {
     totalYield: "Total Yield", totalYieldUnit: "q",
     livePrice: "LIVE PRICE",
     heard: "Heard:",
-    // Risk plain-language
     riskWarningHigh: "⚠️ Many farmers are growing this crop — prices may fall at harvest time.",
     riskWarningMedium: "🟡 Moderate risk. Keep an eye on local market prices before selling.",
     soilOptions: {red:"Red Soil 🌄", black:"Black Soil 🏔️", sandy:"Sandy Soil 🏜️", loamy:"Loamy Soil 🌿"},
@@ -664,7 +822,7 @@ const T = {
     topPick: "⭐ सबसे अच्छा",
     pricesUpdated: "भाव:",
     addApiKey: "लाइव मंडी भाव के लिए API key डालें",
-    apiKeyInstructions: "App.jsx खोलें → YOUR_DATA_GOV_IN_KEY बदलें।",
+    apiKeyInstructions: "App.jsx खोलें → 579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537 बदलें।",
     weatherLive: "मौसम ✅ लाइव",
     fetchingWeather: "⟳ मौसम जानकारी ला रहे हैं...",
     refreshPrices: "⟳ अपडेट करें",
@@ -679,7 +837,6 @@ const T = {
     heard: "सुना:",
     riskWarningHigh: "⚠️ इस फसल को बहुत किसान लगा रहे हैं — कटाई के समय भाव गिर सकते हैं।",
     riskWarningMedium: "🟡 मध्यम जोखिम। बेचने से पहले स्थानीय मंडी भाव देखें।",
-    riskWarningLow: "✅ अच्छा चुनाव — माँग स्थिर है और कम प्रतिस्पर्धा।",
     soilOptions: {red:"लाल मिट्टी 🌄", black:"काली मिट्टी 🏔️", sandy:"रेतीली 🏜️", loamy:"दोमट 🌿"},
     rainfallOptions: {low:"कम ☀️", medium:"मध्यम 🌦️", high:"ज़्यादा 🌧️"},
     seasonOptions: {kharif:"खरीफ 🌱", rabi:"रबी ❄️"},
@@ -752,7 +909,7 @@ const T = {
     topPick: "⭐ ಅತ್ಯುತ್ತಮ",
     pricesUpdated: "ಬೆಲೆ:",
     addApiKey: "ನೇರ ಮಂಡಿ ಬೆಲೆಗೆ API key ಸೇರಿಸಿ",
-    apiKeyInstructions: "App.jsx ತೆರೆಯಿರಿ → YOUR_DATA_GOV_IN_KEY ಬದಲಿಸಿ.",
+    apiKeyInstructions: "App.jsx ತೆರೆಯಿರಿ → 579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537 ಬದಲಿಸಿ.",
     weatherLive: "ಹವಾಮಾನ ✅ ನೇರ",
     fetchingWeather: "⟳ ಹವಾಮಾನ ತರುತ್ತಿದ್ದೇವೆ...",
     refreshPrices: "⟳ ಅಪ್‌ಡೇಟ್",
@@ -767,7 +924,6 @@ const T = {
     heard: "ಕೇಳಿದ್ದು:",
     riskWarningHigh: "⚠️ ಹಲವು ರೈತರು ಈ ಬೆಳೆ ಬೆಳೆಯುತ್ತಿದ್ದಾರೆ — ಕೊಯ್ಲು ಸಮಯದಲ್ಲಿ ಬೆಲೆ ಕಡಿಮೆ ಆಗಬಹುದು.",
     riskWarningMedium: "🟡 ಮಧ್ಯಮ ಅಪಾಯ. ಮಾರಾಟ ಮೊದಲು ಸ್ಥಳೀಯ ಬೆಲೆ ನೋಡಿ.",
-    riskWarningLow: "✅ ಉತ್ತಮ ಆಯ್ಕೆ — ಬೇಡಿಕೆ ಸ್ಥಿರ ಮತ್ತು ಕಡಿಮೆ ಸ್ಪರ್ಧೆ.",
     soilOptions: {red:"ಕೆಂಪು ಮಣ್ಣು 🌄", black:"ಕಪ್ಪು ಮಣ್ಣು 🏔️", sandy:"ಮರಳು ಮಣ್ಣು 🏜️", loamy:"ಗೋಡು ಮಣ್ಣು 🌿"},
     rainfallOptions: {low:"ಕಡಿಮೆ ☀️", medium:"ಮಧ್ಯಮ 🌦️", high:"ಹೆಚ್ಚು 🌧️"},
     seasonOptions: {kharif:"ಖರೀಫ್ 🌱", rabi:"ರಬಿ ❄️"},
@@ -786,7 +942,7 @@ const T = {
   },
 };
 
-const MANDI_KEY = "579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537"; 
+const MANDI_KEY = "579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537";
 
 const CROPS_DB = {
   red:   { low:{kharif:["Groundnut","Ragi","Maize"],rabi:["Chickpea","Linseed","Safflower"]},medium:{kharif:["Cotton","Sunflower","Sesame"],rabi:["Wheat","Mustard","Barley"]},high:{kharif:["Sugarcane","Paddy","Banana"],rabi:["Potato","Onion","Garlic"]} },
@@ -838,9 +994,8 @@ const CROP_META = {
 };
 
 function getRainfallLevel(mmPer30Days) {
-  const monthly = mmPer30Days;
-  if (monthly < 50)  return "low";
-  if (monthly < 150) return "medium";
+  if (mmPer30Days < 50)  return "low";
+  if (mmPer30Days < 150) return "medium";
   return "high";
 }
 function getCurrentSeason() {
@@ -854,18 +1009,16 @@ function getSeasonLabel() {
 }
 
 async function fetchOpenMeteoWeather(lat, lon) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=precipitation_sum,temperature_2m_max,temperature_2m_min&forecast_days=30&timezone=auto`;
-  // Try twice before giving up
+  // Validate coords are real numbers in valid range before hitting API
+  if (lat == null || lon == null || isNaN(lat) || isNaN(lon) ||
+      lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new Error(`Invalid coordinates: lat=${lat}, lon=${lon}`);
+  }
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&daily=precipitation_sum,temperature_2m_max,temperature_2m_min&forecast_days=30&timezone=auto`;
   let res, d;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      res = await fetch(url);
-      d = await res.json();
-      break;
-    } catch(e) {
-      if (attempt === 1) throw e;
-      await new Promise(r => setTimeout(r, 1200));
-    }
+    try { res = await fetch(url); d = await res.json(); break; }
+    catch(e) { if (attempt === 1) throw e; await new Promise(r => setTimeout(r, 1200)); }
   }
   const totalRain = d.daily.precipitation_sum.reduce((a,b)=>a+(b||0),0);
   const avgTemp = d.daily.temperature_2m_max.reduce((a,b)=>a+b,0) / d.daily.temperature_2m_max.length;
@@ -879,7 +1032,7 @@ async function fetchOpenMeteoWeather(lat, lon) {
 }
 
 async function fetchMandiPrice(cropName, state="") {
-  if (MANDI_KEY === "YOUR_DATA_GOV_IN_KEY") return null;
+  if (MANDI_KEY === "579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") return null;
   const commodity = MANDI_NAMES[cropName] || cropName;
   let url = `https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070?api-key=${MANDI_KEY}&format=json&limit=10&filters[commodity]=${encodeURIComponent(commodity)}`;
   if (state) url += `&filters[state]=${encodeURIComponent(state)}`;
@@ -1025,19 +1178,22 @@ function CropWiseDashboard({ userName, onLogout }) {
     return()=>window.removeEventListener("resize",fn);
   },[]);
 
+  useEffect(()=>{ detectLocation(); },[]);
+
   useEffect(()=>{
     if (!coords) return;
+    const { lat, lon } = coords;
+    if (!lat || !lon || !isFinite(lat) || !isFinite(lon) ||
+        lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
     setWeatherLoading(true); setWeatherErr("");
-    fetchOpenMeteoWeather(coords.lat, coords.lon)
+    fetchOpenMeteoWeather(lat, lon)
       .then(w=>{ setWeather(w); setRainfall(w.rainfallLevel); })
       .catch(()=>setWeatherErr("Weather fetch failed — select soil & rainfall manually below."))
       .finally(()=>setWeatherLoading(false));
   },[coords]);
 
   const refreshMandiPrices = useCallback(async(state=userState)=>{
-    if (MANDI_KEY==="YOUR_DATA_GOV_IN_KEY") {
-      setMandiErr("no_key"); return;
-    }
+    if (MANDI_KEY==="579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") { setMandiErr("no_key"); return; }
     setMandiLoading(true); setMandiErr("");
     try {
       const prices = await fetchAllMandiPrices(Object.keys(CROP_META), state);
@@ -1107,35 +1263,88 @@ function CropWiseDashboard({ userName, onLogout }) {
     if (!soil||!rainfall||!season) return;
     setLoading(true);
     const crops=(CROPS_DB[soil]?.[rainfall]?.[season]||["Groundnut","Ragi","Tur Dal"]).slice(0,3);
-    
     let livePrices={};
-    if (MANDI_KEY!=="YOUR_DATA_GOV_IN_KEY") {
-      livePrices=await fetchAllMandiPrices(crops,userState);
-    }
-    const enriched=crops.map(c=>({
-      name:c, ...CROP_META[c],
-      price: livePrices[c]||getPrice(c),
-      isLive: !!livePrices[c],
-    }));
+    if (MANDI_KEY!=="579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") livePrices=await fetchAllMandiPrices(crops,userState);
+    const enriched=crops.map(c=>({name:c,...CROP_META[c],price:livePrices[c]||getPrice(c),isLive:!!livePrices[c]}));
     setResults(enriched);
     setScreen("results");
     setLoading(false);
   };
 
-  // Voice input
-  const startVoice=()=>{
+    const speak = useCallback((text) => {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang==="hi"?"hi-IN":lang==="kn"?"kn-IN":"en-IN";
+      u.rate = 0.88;
+      window.speechSynthesis.speak(u);
+    }, [lang]);
+  
+    // Wizard step for mobile guided flow (0=soil,1=rain,2=season,3=done)
+    const [wizardStep, setWizardStep] = useState(0);
+  
+    // Real-time voice recognition refs
+    const recognitionRef = useRef(null);
+    const [interimText,   setInterimText]   = useState("");
+    const [aiParsing,     setAiParsing]     = useState(false);
+    const [voiceDetected, setVoiceDetected] = useState({soil:null,rainfall:null,season:null});
+  
+    const stopVoice = () => {
+      if (recognitionRef.current) { recognitionRef.current.stop(); recognitionRef.current = null; }
+      setListening(false); setInterimText("");
+    };
+  
+    const parseWithAI = async (transcript) => {
+      setAiParsing(true);
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:100,
+            messages:[{role:"user",content:`Extract farm details from farmer speech (English/Hindi/Kannada). Return ONLY JSON with keys soil (red|black|sandy|loamy|null), rainfall (low|medium|high|null), season (kharif|rabi|null). Speech: "${transcript}"`}] })
+        });
+        const data = await res.json();
+        const parsed = JSON.parse((data.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
+        setVoiceDetected(parsed);
+        if (parsed.soil)     { setSoil(parsed.soil);         setWizardStep(s=>Math.max(s,1)); }
+        if (parsed.rainfall) { setRainfall(parsed.rainfall); setWizardStep(s=>Math.max(s,2)); }
+        if (parsed.season)   { setSeason(parsed.season);     setWizardStep(s=>Math.max(s,3)); }
+        const parts=[parsed.soil&&parsed.soil+" soil",parsed.rainfall&&parsed.rainfall+" rain",parsed.season&&parsed.season+" season"].filter(Boolean);
+        if(parts.length) speak("I heard: "+parts.join(", "));
+      } catch {
+        const t=transcript.toLowerCase();
+        const det={};
+        if(t.includes("red")){setSoil("red");det.soil="red";}else if(t.includes("black")){setSoil("black");det.soil="black";}
+        else if(t.includes("sandy")){setSoil("sandy");det.soil="sandy";}else if(t.includes("loam")){setSoil("loamy");det.soil="loamy";}
+        if(t.includes("low")){setRainfall("low");det.rainfall="low";}else if(t.includes("medium")){setRainfall("medium");det.rainfall="medium";}else if(t.includes("high")){setRainfall("high");det.rainfall="high";}
+        if(t.includes("kharif")||t.includes("summer")){setSeason("kharif");det.season="kharif";}else if(t.includes("rabi")||t.includes("winter")){setSeason("rabi");det.season="rabi";}
+        setVoiceDetected(det);
+      } finally { setAiParsing(false); }
+    };
+    
+  const startVoice = () => {
+    if (listening) { stopVoice(); return; }
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if (!SR){setVoiceText("Voice not supported.");return;}
-    const r=new SR(); r.lang="en-IN";
-    r.onstart=()=>setListening(true); r.onend=()=>setListening(false);
+    const r=new SR();
+    r.lang=lang==="hi"?"hi-IN":lang==="kn"?"kn-IN":"en-IN";
+    r.continuous=true; r.interimResults=true;
+    r.onstart=()=>{setListening(true);setVoiceText("");setInterimText("");setVoiceDetected({soil:null,rainfall:null,season:null});};
+    r.onend=()=>{setListening(false);setInterimText("");};
+    r.onerror=(e)=>{setListening(false);setInterimText("");if(e.error!=="aborted")setVoiceText("Mic error: "+e.error);};
     r.onresult=(e)=>{
-      const t=e.results[0][0].transcript.toLowerCase(); setVoiceText(t);
-      if(t.includes("red"))setSoil("red"); else if(t.includes("black"))setSoil("black");
-      else if(t.includes("sandy"))setSoil("sandy"); else if(t.includes("loam"))setSoil("loamy");
-      if(t.includes("low"))setRainfall("low"); else if(t.includes("medium"))setRainfall("medium"); else if(t.includes("high"))setRainfall("high");
-      if(t.includes("kharif")||t.includes("summer"))setSeason("kharif"); else if(t.includes("rabi")||t.includes("winter"))setSeason("rabi");
+      let interim="",final="";
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const tx=e.results[i][0].transcript;
+        if(e.results[i].isFinal) final+=tx+" "; else interim+=tx;
+      }
+      if(interim) setInterimText(interim);
+      if(final){
+        const full=(voiceText+" "+final).trim();
+        setVoiceText(full); setInterimText("");
+        parseWithAI(full);
+      }
     };
-    r.start();
+    recognitionRef.current=r; r.start();
   };
 
   const profitMeta     = CROP_META[profitCrop];
@@ -1143,7 +1352,7 @@ function CropWiseDashboard({ userName, onLogout }) {
   const totalCost      = costPerAcre * area;
   const netProfitAmt   = grossRevenue - totalCost;
   const profitEstimate = grossRevenue.toLocaleString("en-IN");
-  const hasMandiKey    = MANDI_KEY !== "YOUR_DATA_GOV_IN_KEY";
+  const hasMandiKey    = MANDI_KEY !== "579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537";
   const liveCount      = Object.keys(mandiPrices).length;
 
   const shared = {
@@ -1157,50 +1366,35 @@ function CropWiseDashboard({ userName, onLogout }) {
     getPrice,isLive,hasMandiKey,liveCount,
     lang,setLang,T,t,
     costPerAcre,setCostPerAcre,netProfitAmt,totalCost,grossRevenue,
-    onLogout,userName,
+    onLogout,userName,CROPS_DB,CROP_META,
   };
-
-  const blobs=[["15%","-5%","#22c55e"],["55%","65%","#0ea5e9"],["85%","25%","#a855f7"]];
 
   if (isDesktop) return (
     <div style={{display:"flex",minHeight:"100vh",background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",color:"#3a1f00",fontFamily:"'Sora',sans-serif",overflow:"hidden"}}>
       <style>{CSS}</style>
-
-      {/* Sidebar */}
       <aside style={{width:240,minHeight:"100vh",background:"linear-gradient(180deg,rgba(255,248,230,0.98),rgba(253,240,216,0.98))",borderRight:"1.5px solid rgba(180,120,40,0.2)",display:"flex",flexDirection:"column",position:"fixed",top:0,left:0,bottom:0,zIndex:10,boxShadow:"2px 0 20px rgba(120,60,0,0.08)"}}>
         <div style={{padding:"28px 24px 16px"}}>
           <div style={{fontSize:24,fontWeight:900,letterSpacing:"-0.5px",fontFamily:"'Cinzel',serif"}}><span style={{color:"#7a3a00"}}>Crop</span><span style={{color:"#c87010"}}>Wise</span><span style={{fontSize:10,background:"rgba(120,60,0,0.1)",color:"#7a3a00",borderRadius:6,padding:"2px 7px",marginLeft:8,fontWeight:700,verticalAlign:"middle",border:"1px solid rgba(120,60,0,0.2)"}}>AI</span></div>
           <div style={{fontSize:11,color:"#9a6030",marginTop:4,fontWeight:600}}>{t.appTagline}</div>
           <LangToggle lang={lang} setLang={setLang}/>
-
           {weather && (
             <div style={{marginTop:14,padding:"12px",background:"rgba(120,60,0,0.06)",borderRadius:12,border:"1px solid rgba(120,60,0,0.15)"}}>
               <div style={{fontSize:10,color:"#b85c00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{t.liveWeather}</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                <div style={{textAlign:"center"}}>
-                  <div style={{fontSize:18,fontWeight:900,color:"#2a7a00"}}>{weather.rainfallMm}<span style={{fontSize:10,fontWeight:400}}>mm</span></div>
-                  <div style={{fontSize:9,color:"#9a6030"}}>{t.rain30day}</div>
-                </div>
-                <div style={{textAlign:"center"}}>
-                  <div style={{fontSize:18,fontWeight:900,color:"#b85c00"}}>{weather.avgTempC}<span style={{fontSize:10,fontWeight:400}}>°C</span></div>
-                  <div style={{fontSize:9,color:"#9a6030"}}>{t.avgTempLabel}</div>
-                </div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:"#2a7a00"}}>{weather.rainfallMm}<span style={{fontSize:10,fontWeight:400}}>mm</span></div><div style={{fontSize:9,color:"#9a6030"}}>{t.rain30day}</div></div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:"#b85c00"}}>{weather.avgTempC}<span style={{fontSize:10,fontWeight:400}}>°C</span></div><div style={{fontSize:9,color:"#9a6030"}}>{t.avgTempLabel}</div></div>
               </div>
-              <div style={{marginTop:8,fontSize:11,color:"#2a7a00",textAlign:"center",fontWeight:700}}>
-                {weather.rainfallLevel.toUpperCase()}
-              </div>
+              <div style={{marginTop:8,fontSize:11,color:"#2a7a00",textAlign:"center",fontWeight:700}}>{weather.rainfallLevel.toUpperCase()}</div>
             </div>
           )}
           {weatherLoading && <div style={{marginTop:10,fontSize:11,color:"#9a6030"}}>{t.fetchingWeather}</div>}
         </div>
-
         <nav style={{flex:1,padding:"0 12px"}}>
           {NAV_IDS.map(n=>{
             const active=screen===n.id||(screen==="results"&&n.id==="plan");
             return(<div key={n.id} className="nb" onClick={()=>go(n.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderRadius:12,cursor:"pointer",marginBottom:4,background:active?"linear-gradient(135deg,#7a3a00,#b85c00)":"transparent",color:active?"#fff8ee":"#7a5030",fontWeight:active?700:500,fontSize:14,border:active?"none":"1px solid transparent"}}><span style={{fontSize:18}}>{n.icon}</span>{t[n.tk]}</div>);
           })}
         </nav>
-
         <div style={{padding:"16px 24px",borderTop:"1.5px solid rgba(180,120,40,0.2)"}}>
           <div style={{background:"rgba(120,60,0,0.08)",border:"1px solid rgba(120,60,0,0.18)",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
             <div style={{fontSize:10,color:"#b85c00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t.season}</div>
@@ -1215,8 +1409,6 @@ function CropWiseDashboard({ userName, onLogout }) {
           </button>
         </div>
       </aside>
-
-      {/* Main */}
       <main style={{marginLeft:240,width:"calc(100vw - 240px)",overflowY:"auto",minHeight:"100vh",position:"relative",zIndex:1}}>
         <div className="fade" key={screen} style={{padding:"32px 36px 60px"}}>
           {canGoBack && <BackButton onBack={goBack} mobile={false}/>}
@@ -1226,7 +1418,6 @@ function CropWiseDashboard({ userName, onLogout }) {
     </div>
   );
 
-  // Mobile
   return(
     <div style={{minHeight:"100vh",background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",color:"#3a1f00",fontFamily:"'Sora',sans-serif",overflow:"hidden"}}>
       <style>{CSS}</style>
@@ -1251,32 +1442,147 @@ function CropWiseDashboard({ userName, onLogout }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-// BACK BUTTON COMPONENT
-// ══════════════════════════════════════════════════════════════════
 function BackButton({ onBack, mobile }) {
   const [h, setH] = useState(false);
   return (
     <button onClick={onBack} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-      style={{
-        display:"flex", alignItems:"center", gap: mobile ? 4 : 8,
-        background: h ? "rgba(120,60,0,0.15)" : "rgba(255,248,230,0.85)",
-        border: `1.5px solid ${h ? "rgba(120,60,0,0.4)" : "rgba(120,80,20,0.2)"}`,
-        borderRadius: 99, padding: mobile ? "5px 10px" : "8px 16px 8px 12px",
-        cursor:"pointer", marginBottom: mobile ? 0 : 20,
-        backdropFilter:"blur(6px)",
-        boxShadow:"0 2px 8px rgba(120,60,0,0.1)",
-        transition:"all .2s",
-      }}>
-      <span style={{fontSize:20, color:"#7a3a00", lineHeight:1, transition:"transform .2s", display:"inline-block", transform: h?"translateX(-2px)":"none"}}>‹</span>
-      {!mobile && <span style={{fontSize:13, fontWeight:700, color: h?"#4a2200":"#7a5030", fontFamily:"'Lato',sans-serif", transition:"color .2s"}}>Back</span>}
+      style={{display:"flex",alignItems:"center",gap:mobile?4:8,background:h?"rgba(120,60,0,0.15)":"rgba(255,248,230,0.85)",border:`1.5px solid ${h?"rgba(120,60,0,0.4)":"rgba(120,80,20,0.2)"}`,borderRadius:99,padding:mobile?"5px 10px":"8px 16px 8px 12px",cursor:"pointer",marginBottom:mobile?0:20,backdropFilter:"blur(6px)",boxShadow:"0 2px 8px rgba(120,60,0,0.1)",transition:"all .2s"}}>
+      <span style={{fontSize:20,color:"#7a3a00",lineHeight:1,transition:"transform .2s",display:"inline-block",transform:h?"translateX(-2px)":"none"}}>‹</span>
+      {!mobile && <span style={{fontSize:13,fontWeight:700,color:h?"#4a2200":"#7a5030",fontFamily:"'Lato',sans-serif",transition:"color .2s"}}>Back</span>}
     </button>
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-// DESKTOP SCREENS
-// ══════════════════════════════════════════════════════════════════
+// DESKTOP SCREENS (unchanged from your app.jsx)
+
+const PRICE_HISTORY = {
+  Groundnut: [4500, 4890, 5050, 5285, 5200],
+  Ragi: [1900, 2150, 2350, 2583, 2800],
+  "Tur Dal": [5050, 5675, 5800, 6300, 6800],
+  Maize:     [1310,1430,1570,1700,1900],
+  Cotton:    [4320,5150,5726,6080,6200],
+  Wheat:     [1735,1840,1975,2125,2200],
+  Soybean:   [2600,3100,3500,3710,3800],
+  Paddy:     [1470,1550,1750,1940,2100],
+  Chickpea:  [4400,4620,5100,5335,5600],
+  Mustard:   [3850,4200,5050,5150,5400],
+  Sunflower: [3800,4100,4600,4800,5100],
+  Bajra:     [1425,1520,1700,2015,2300],
+  Sesame:    [5800,6200,7400,8635,9200],
+  Onion:     [700,1100,1400,900,1200],
+  Tomato:    [600,1200,800,700,900],
+  Potato:    [900,1000,1200,1100,1400],
+  Capsicum:  [2800,3200,3600,3900,4200],
+  Sugarcane: [255,275,290,315,350],
+  Banana:    [1600,1900,2000,2200,2400],
+  Moong:     [5225,5575,6975,7196,7200],
+  Barley:    [1325,1440,1600,1735,1800],
+  Linseed:   [3500,3800,4200,4635,4800],
+  Turmeric:  [5200,6000,7200,8000,8500],
+  Garlic:    [5000,7000,9000,10000,12000],
+  Watermelon:[1200,1400,1500,1700,1800],
+  Safflower: [3695,4000,4600,5200,5800],
+  Cumin:     [9000,12000,15000,20000,18000],
+  Carrot:    [1400,1600,1900,2000,2200],
+};
+const HISTORY_YEARS = [2020,2021,2022,2023,2024];
+
+//Price Trend Chart
+function PriceTrendChart({ crop, currentPrice, isLive }) {
+  const raw    = PRICE_HISTORY[crop] || [];
+  const data   = isLive ? [...raw.slice(1), currentPrice] : raw;
+  if (!data.length) return null;
+
+  const W=480, H=160, PAD={t:20,r:16,b:36,l:64};
+  const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b;
+  const years = isLive ? [...HISTORY_YEARS.slice(1), 2025] : HISTORY_YEARS;
+
+  const minV=Math.min(...data)*0.92;
+  const maxV=Math.max(...data)*1.05;
+  const toX=(i)=>PAD.l+i/(data.length-1)*cW;
+  const toY=(v)=>PAD.t+cH-(v-minV)/(maxV-minV)*cH;
+
+  const pts=data.map((v,i)=>`${toX(i)},${toY(v)}`).join(" ");
+  const area=`M${toX(0)},${toY(data[0])} `+data.map((v,i)=>`L${toX(i)},${toY(v)}`).join(" ")+` L${toX(data.length-1)},${PAD.t+cH} L${toX(0)},${PAD.t+cH} Z`;
+
+  const trend=data[data.length-1]-data[0];
+  const col=trend>=0?"#22c55e":"#ef4444";
+  const trendPct=Math.abs(Math.round(trend/data[0]*100));
+
+  const ticks=4;
+  const gridLines=Array.from({length:ticks+1},(_,i)=>{
+    const v=minV+(maxV-minV)*i/ticks;
+    const y=toY(v);
+    return {y,label:`₹${Math.round(v/100)*100}`};
+  });
+
+  return (
+    <div style={{marginTop:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#b85c00"}}>
+          5-Year Price Trend
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          {isLive && <span style={{fontSize:9,background:"rgba(40,120,0,0.12)",color:"#2a7a00",borderRadius:4,padding:"2px 7px",fontWeight:700}}>🟢 2025 LIVE</span>}
+          <span style={{fontSize:12,fontWeight:700,color:col}}>
+            {trend>=0?"▲":"▼"} {trendPct}% since 2020
+          </span>
+        </div>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
+        <defs>
+          <linearGradient id={`grad-${crop}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={col} stopOpacity="0.25"/>
+            <stop offset="100%" stopColor={col} stopOpacity="0.02"/>
+          </linearGradient>
+        </defs>
+        {/* Grid lines */}
+        {gridLines.map(({y,label},i)=>(
+          <g key={i}>
+            <line x1={PAD.l} y1={y} x2={W-PAD.r} y2={y} stroke="rgba(180,120,40,0.15)" strokeWidth="1" strokeDasharray="4,4"/>
+            <text x={PAD.l-6} y={y+4} textAnchor="end" fontSize="9" fill="#9a6030">{label}</text>
+          </g>
+        ))}
+        {/* Area fill */}
+        <path d={area} fill={`url(#grad-${crop})`}/>
+        {/* Line */}
+        <polyline points={pts} fill="none" stroke={col} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+        {/* Data points */}
+        {data.map((v,i)=>(
+          <g key={i}>
+            <circle cx={toX(i)} cy={toY(v)} r="5" fill="#fff" stroke={col} strokeWidth="2.5"/>
+            {i===data.length-1&&<circle cx={toX(i)} cy={toY(v)} r="3" fill={col}/>}
+          </g>
+        ))}
+        {/* Year labels */}
+        {years.map((yr,i)=>(
+          <text key={i} x={toX(i)} y={H-6} textAnchor="middle" fontSize="10" fontWeight={i===years.length-1?"700":"400"} fill={i===years.length-1?col:"#9a6030"}>{yr}</text>
+        ))}
+        {/* Price labels on hover — show on all points */}
+        {data.map((v,i)=>(
+          <text key={i} x={toX(i)} y={toY(v)-10} textAnchor="middle" fontSize="9" fontWeight="700" fill={col}>
+            {v>=1000?`₹${(v/1000).toFixed(1)}k`:`₹${v}`}
+          </text>
+        ))}
+      </svg>
+      {/* Year-by-year table */}
+      <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
+        {data.map((v,i)=>{
+          const prev=i>0?data[i-1]:null;
+          const chg=prev!=null?Math.round((v-prev)/prev*100):null;
+          return(
+            <div key={i} style={{flex:1,minWidth:60,background:i===data.length-1?"rgba(40,120,0,0.08)":"rgba(120,60,0,0.05)",borderRadius:8,padding:"6px 8px",textAlign:"center",border:i===data.length-1?"1.5px solid rgba(40,120,0,0.2)":"1px solid rgba(180,120,40,0.15)"}}>
+              <div style={{fontSize:9,color:"#9a6030",marginBottom:2}}>{years[i]}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#3a1f00"}}>₹{v>=1000?(v/1000).toFixed(1)+"k":v}</div>
+              {chg!=null&&<div style={{fontSize:9,color:chg>=0?"#22c55e":"#ef4444",fontWeight:600}}>{chg>=0?"+":""}{chg}%</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DesktopScreens(p) {
   const card={background:"rgba(255,252,242,0.88)",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:20,padding:"24px 28px",marginBottom:20,boxShadow:"0 4px 20px rgba(120,60,0,0.08)",backdropFilter:"blur(8px)"};
   const lbl={fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",color:"#b85c00",marginBottom:12};
@@ -1286,17 +1592,13 @@ function DesktopScreens(p) {
   const spin={animation:"spin 1s linear infinite",display:"inline-block"};
 
   if (p.screen==="home") return(<>
-    {/* API key banner — only show to developers, phrased simply */}
     {!p.hasMandiKey && (
       <div style={{background:"rgba(255,240,210,0.9)",border:"1.5px solid rgba(180,80,0,0.25)",borderRadius:16,padding:"16px 22px",marginBottom:20,display:"flex",alignItems:"center",gap:14}}>
         <span style={{fontSize:28}}>⚙️</span>
-        <div style={{flex:1}}>
-          <div style={{fontWeight:700,color:"#b85c00",marginBottom:4}}>{p.t.noKeyMsg}</div>
-        </div>
+        <div style={{flex:1}}><div style={{fontWeight:700,color:"#b85c00",marginBottom:4}}>{p.t.noKeyMsg}</div></div>
         <div style={{fontSize:11,background:"rgba(120,60,0,0.08)",color:"#2a7a00",borderRadius:8,padding:"6px 10px",fontWeight:700,textAlign:"center",whiteSpace:"nowrap"}}>Weather<br/>✅ LIVE</div>
       </div>
     )}
-
     <div style={{background:"linear-gradient(135deg,rgba(120,60,0,0.08),rgba(255,248,230,0.6))",border:"1px solid rgba(40,100,0,0.2)",borderRadius:24,padding:"40px 44px",marginBottom:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:32,alignItems:"center"}}>
       <div>
         <div style={{fontSize:12,color:"#2a7a00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>🌾 {getSeasonLabel()} · Real-Time Intelligence</div>
@@ -1308,47 +1610,54 @@ function DesktopScreens(p) {
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        {[
-          {
-            icon:"🌧", label:"Rainfall", to:"plan",
-            value: p.weather ? `${p.weather.rainfallMm}mm` : p.weatherLoading ? "Detecting…" : "Tap to detect",
-            sub:   p.weather ? `${p.weather.rainfallLevel} — 30 day total` : "Go to Crop Plan → detect location",
-            live:  !!p.weather,
-            actionLabel: p.weather ? null : "📍 Detect Now",
-          },
-          {
-            icon:"🌡", label:"Avg Temperature", to:"plan",
-            value: p.weather ? `${p.weather.avgTempC}°C` : p.weatherLoading ? "Detecting…" : "Tap to detect",
-            sub:   p.weather ? "30-day average high" : "Auto-detected after location",
-            live:  !!p.weather,
-            actionLabel: p.weather ? null : "📍 Detect Now",
-          },
-          {
-            icon:"📊", label:"Mandi Prices", to:"market",
-            value: p.mandiLoading ? "Fetching…" : p.liveCount>0 ? `${p.liveCount} crops tracked` : "View Markets",
-            sub:   p.liveCount>0 ? `Updated ${p.lastUpdated?.toLocaleTimeString()||""}` : "Tap to open live market prices",
-            live:  p.liveCount>0,
-            actionLabel: p.liveCount===0 ? "→ Open Markets" : null,
-          },
-          {
-            icon:"📅", label:"Current Season", to:"plan",
-            value: getSeasonLabel(),
-            sub:   `Auto-detected · Tap to plan ${getCurrentSeason()} crops`,
-            live:  true,
-            actionLabel: "→ Start Planning",
-          },
-        ].map((s,i)=>(
-          <div key={i} className="hw" onClick={()=>p.go(s.to)} style={{background:"rgba(255,248,230,0.88)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
-            <div style={{fontSize:24}}>{s.icon}</div>
-            <div style={{fontWeight:800,fontSize:16,marginTop:8,color:"#3a1f00"}}>{s.value}</div>
-            <div style={{fontSize:11,color:"#9a6030",marginTop:3,display:"flex",alignItems:"center",gap:4}}>{s.label}<LiveTag live={s.live}/></div>
-            <div style={{fontSize:10,color:"#b87040",marginTop:3,lineHeight:1.4}}>{s.sub}</div>
-            {s.actionLabel && <div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#7a3a00",background:"rgba(120,60,0,0.08)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>{s.actionLabel}</div>}
-          </div>
-        ))}
+        {(()=>{
+          const mm=p.weather?.rainfallMm; const lvl=p.weather?.rainfallLevel;
+          const desc=mm==null?null:mm<50?"Very dry conditions this month. Drought-risk crops advised.":mm<120?"Low rainfall. Irrigation-dependent crops best.":mm<250?"Moderate rainfall. Good for most Rabi/Kharif crops.":mm<400?"High rainfall. Paddy, Sugarcane & wet crops thriving.":"Excess rain. Risk of waterlogging — choose flood-tolerant crops.";
+          const barPct=mm==null?0:Math.min(100,Math.round(mm/5));
+          const barCol=mm==null?"#ccc":mm<120?"#f59e0b":mm<250?"#2a7a00":"#1d4ed8";
+          return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>🌧</span><LiveTag live={!!p.weather}/></div>
+            <div style={{fontWeight:900,fontSize:22,marginTop:6,color:"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":mm!=null?`${mm} mm`:"—"}</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{lvl?`${lvl} Rainfall · 30-day`:"Current Rainfall Conditions"}</div>
+            {desc&&<><div style={{height:4,background:"rgba(180,120,40,0.15)",borderRadius:99,margin:"8px 0 6px",overflow:"hidden"}}><div style={{width:`${barPct}%`,height:"100%",background:barCol,borderRadius:99,transition:"width 1s ease"}}/></div><div style={{fontSize:10,color:"#7a5030",lineHeight:1.5}}>{desc}</div></>}
+          </div>);
+        })()}
+        {(()=>{
+          const temp=p.weather?.avgTempC;
+          const feel=temp==null?null:temp<15?{label:"Cold",tip:"Cold-weather crops: Wheat, Mustard, Peas",col:"#1d4ed8",icon:"🥶"}:temp<25?{label:"Pleasant",tip:"Ideal for Rabi crops: Wheat, Chickpea, Barley",col:"#2a7a00",icon:"😊"}:temp<32?{label:"Warm",tip:"Good for Maize, Sunflower, Soybean",col:"#b85c00",icon:"☀️"}:{label:"Hot",tip:"Heat-tolerant crops: Cotton, Bajra, Groundnut",col:"#cc2200",icon:"🌡"};
+          return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>{feel?.icon||"🌡"}</span><LiveTag live={!!p.weather}/></div>
+            <div style={{fontWeight:900,fontSize:22,marginTop:6,color:feel?.col||"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":temp!=null?`${temp}°C`:"—"}</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{feel?`${feel.label} · ${p.location||"Your location"}`:"Avg Temperature"}</div>
+            {feel&&<div style={{fontSize:10,color:"#7a5030",marginTop:6,lineHeight:1.5}}>{feel.tip}</div>}
+          </div>);
+        })()}
+        {(()=>{
+          const season=getCurrentSeason();
+          const allCrops=[...new Set(Object.values(CROPS_DB).flatMap(soils=>Object.values(soils).flatMap(lvls=>lvls[season]||[])))];
+          const scored=allCrops.map(c=>({name:c,price:p.mandiPrices[c]||CROP_META[c]?.fallbackPrice||0,live:!!p.mandiPrices[c],icon:CROP_META[c]?.icon||"🌿",profit:CROP_META[c]?.profit||"Medium"})).sort((a,b)=>b.price-a.price).slice(0,5);
+          return(<div className="hw" onClick={()=>p.go("market")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer",gridColumn:"1 / -1"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div><div style={{fontSize:13,fontWeight:800,color:"#3a1f00"}}>🔥 Trending Crops — {season.charAt(0).toUpperCase()+season.slice(1)} 2026</div><div style={{fontSize:10,color:"#9a6030",marginTop:2}}>Ranked by current mandi price · Tap to see full market</div></div>
+              <LiveTag live={Object.keys(p.mandiPrices).length>0}/>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {scored.map((c,i)=>(<div key={c.name} style={{display:"flex",alignItems:"center",gap:6,background:i===0?"linear-gradient(135deg,rgba(40,120,0,0.12),rgba(40,120,0,0.06))":"rgba(120,60,0,0.06)",border:`1.5px solid ${i===0?"rgba(40,120,0,0.3)":"rgba(180,120,40,0.18)"}`,borderRadius:10,padding:"7px 12px"}}>
+                <span style={{fontSize:18}}>{c.icon}</span>
+                <div><div style={{fontSize:12,fontWeight:700,color:"#3a1f00",display:"flex",alignItems:"center",gap:4}}>{i===0&&<span style={{fontSize:9,background:"rgba(40,120,0,0.15)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:800}}>TOP</span>}{c.name}</div><div style={{fontSize:10,color:c.live?"#2a7a00":"#9a6030",fontWeight:600}}>₹{c.price.toLocaleString("en-IN")}/q {c.live?"🟢":""}</div></div>
+              </div>))}
+            </div>
+          </div>);
+        })()}
+        <div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+          <div style={{fontSize:26}}>📅</div>
+          <div style={{fontWeight:900,fontSize:18,marginTop:6,color:"#3a1f00"}}>{getSeasonLabel()}</div>
+          <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>Current Season</div>
+          <div style={{fontSize:10,color:"#7a5030",marginTop:6,lineHeight:1.5}}>Auto-detected from calendar. Tap to start planning your {getCurrentSeason()} crop strategy.</div>
+          <div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#7a3a00",background:"rgba(120,60,0,0.08)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>→ Start Planning</div>
+        </div>
       </div>
     </div>
-
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16}}>
       {[{icon:"📊",l:p.t.marketPrices,s:p.liveCount>0?p.t.liveCount(p.liveCount):p.t.mandiData,t:"market"},{icon:"💰",l:p.t.profitSim,s:p.t.realPrices,t:"profit"},{icon:"⚠️",l:p.t.riskAlerts,s:p.t.warnings,t:"alerts"},{icon:"🎙️",l:p.t.voiceInput,s:p.t.krishiAI,t:"plan"}].map((item,i)=>(
         <div key={i} className="hw" onClick={()=>p.go(item.t)} style={{...card,margin:0,cursor:"pointer"}}>
@@ -1361,7 +1670,6 @@ function DesktopScreens(p) {
   </>);
 
   if (p.screen==="plan"||p.screen==="results") return(<>
-    {/* Location card */}
     <div style={card}>
       <div style={lbl}>📍 {p.t.locationLabel}</div>
       <div style={{display:"flex",gap:10,marginBottom:12}}>
@@ -1378,12 +1686,7 @@ function DesktopScreens(p) {
       </div>}
       {p.weather&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:4}}>
-          {[
-            {l:p.t.rainfallLevel,v:`${p.weather.rainfallMm}mm`,sub:`${p.weather.rainfallLevel} level`,c:"#2a7a00"},
-            {l:"Avg Temp",v:`${p.weather.avgTempC}°C`,sub:"30-day avg",c:"#f59e0b"},
-            {l:p.t.rainfallLevel,v:p.weather.rainfallLevel.toUpperCase(),sub:"Auto-set below",c:"#2a7a00"},
-            {l:p.t.seasonLabel,v:p.season.toUpperCase(),sub:"Auto-detected",c:"#a78bfa"},
-          ].map(m=>(
+          {[{l:p.t.rainfallLevel,v:`${p.weather.rainfallMm}mm`,sub:`${p.weather.rainfallLevel} level`,c:"#2a7a00"},{l:"Avg Temp",v:`${p.weather.avgTempC}°C`,sub:"30-day avg",c:"#f59e0b"},{l:p.t.rainfallLevel,v:p.weather.rainfallLevel.toUpperCase(),sub:"Auto-set below",c:"#2a7a00"},{l:p.t.seasonLabel,v:p.season.toUpperCase(),sub:"Auto-detected",c:"#a78bfa"}].map(m=>(
             <div key={m.l+m.v} style={{background:"rgba(120,60,0,0.08)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(40,120,0,0.25)"}}>
               <div style={{fontSize:10,color:"rgba(40,120,0,0.6)",fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{m.l}</div>
               <div style={{fontSize:16,fontWeight:800,color:m.c}}>{m.v}</div>
@@ -1392,120 +1695,62 @@ function DesktopScreens(p) {
           ))}
         </div>
       )}
-      {p.weather&&(
-        <div style={{marginTop:12}}>
-          <div style={{fontSize:10,color:"#b87040",marginBottom:4}}>{p.t.rainfallForecast}</div>
-          <RainBars data={p.weather.dailyRain}/>
-        </div>
-      )}
+      {p.weather&&(<div style={{marginTop:12}}><div style={{fontSize:10,color:"#b87040",marginBottom:4}}>{p.t.rainfallForecast}</div><RainBars data={p.weather.dailyRain}/></div>)}
     </div>
-
-    {/* Farm details — VISUAL TILES */}
     <div style={card}>
       <div style={lbl}>🌱 {p.t.farmDetails}</div>
-
-      {/* Soil Type Tiles */}
       <div style={{marginBottom:20}}>
         <div style={{fontSize:13,color:"#7a5030",marginBottom:10,fontWeight:600}}>{p.t.soilType}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-          {[
-            {val:"red",   emoji:"🟥", img:"🌄", desc:p.t.soilOptions.red},
-            {val:"black", emoji:"⬛", img:"🏔️", desc:p.t.soilOptions.black},
-            {val:"sandy", emoji:"🟨", img:"🏜️", desc:p.t.soilOptions.sandy},
-            {val:"loamy", emoji:"🟫", img:"🌿", desc:p.t.soilOptions.loamy},
-          ].map(s=>(
-            <div key={s.val} onClick={()=>p.setSoil(s.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.soil===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.soil===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:28}}>{s.img}</div>
-              <div style={{fontSize:11,fontWeight:700,marginTop:6,color:p.soil===s.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{s.desc}</div>
-            </div>
+          {[{val:"red",img:"🌄",desc:p.t.soilOptions.red},{val:"black",img:"🏔️",desc:p.t.soilOptions.black},{val:"sandy",img:"🏜️",desc:p.t.soilOptions.sandy},{val:"loamy",img:"🌿",desc:p.t.soilOptions.loamy}].map(s=>(
+            <div key={s.val} onClick={()=>p.setSoil(s.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.soil===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.soil===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:28}}>{s.img}</div><div style={{fontSize:11,fontWeight:700,marginTop:6,color:p.soil===s.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{s.desc}</div></div>
           ))}
         </div>
       </div>
-
-      {/* Rainfall Tiles */}
       <div style={{marginBottom:20}}>
-        <div style={{fontSize:13,color:"#7a5030",marginBottom:10,fontWeight:600}}>
-          {p.t.rainfallLevel} {p.weather&&<span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>}
-        </div>
+        <div style={{fontSize:13,color:"#7a5030",marginBottom:10,fontWeight:600}}>{p.t.rainfallLevel} {p.weather&&<span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-          {[
-            {val:"low",    emoji:"☀️",  desc:p.t.rainfallOptions.low},
-            {val:"medium", emoji:"🌦️", desc:p.t.rainfallOptions.medium},
-            {val:"high",   emoji:"🌧️", desc:p.t.rainfallOptions.high},
-          ].map(r=>(
-            <div key={r.val} onClick={()=>p.setRainfall(r.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.rainfall===r.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.rainfall===r.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:32}}>{r.emoji}</div>
-              <div style={{fontSize:11,fontWeight:700,marginTop:6,color:p.rainfall===r.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{r.desc}</div>
-            </div>
+          {[{val:"low",emoji:"☀️",desc:p.t.rainfallOptions.low},{val:"medium",emoji:"🌦️",desc:p.t.rainfallOptions.medium},{val:"high",emoji:"🌧️",desc:p.t.rainfallOptions.high}].map(r=>(
+            <div key={r.val} onClick={()=>p.setRainfall(r.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.rainfall===r.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.rainfall===r.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:32}}>{r.emoji}</div><div style={{fontSize:11,fontWeight:700,marginTop:6,color:p.rainfall===r.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{r.desc}</div></div>
           ))}
         </div>
       </div>
-
-      {/* Season Tiles */}
       <div>
-        <div style={{fontSize:13,color:"#7a5030",marginBottom:10,fontWeight:600}}>
-          {p.t.seasonLabel} <span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>
-        </div>
+        <div style={{fontSize:13,color:"#7a5030",marginBottom:10,fontWeight:600}}>{p.t.seasonLabel} <span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {[
-            {val:"kharif", emoji:"🌱", desc:p.t.seasonOptions.kharif},
-            {val:"rabi",   emoji:"❄️", desc:p.t.seasonOptions.rabi},
-          ].map(s=>(
-            <div key={s.val} onClick={()=>p.setSeason(s.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.season===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.season===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:32}}>{s.emoji}</div>
-              <div style={{fontSize:12,fontWeight:700,marginTop:6,color:p.season===s.val?"#7a3a00":"#9a6030"}}>{s.desc}</div>
-            </div>
+          {[{val:"kharif",emoji:"🌱",desc:p.t.seasonOptions.kharif},{val:"rabi",emoji:"❄️",desc:p.t.seasonOptions.rabi}].map(s=>(
+            <div key={s.val} onClick={()=>p.setSeason(s.val)} style={{padding:"14px 10px",borderRadius:14,border:`2px solid ${p.season===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.season===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:32}}>{s.emoji}</div><div style={{fontSize:12,fontWeight:700,marginTop:6,color:p.season===s.val?"#7a3a00":"#9a6030"}}>{s.desc}</div></div>
           ))}
         </div>
       </div>
     </div>
-
-    {/* Voice */}
     <div style={card}>
       <div style={lbl}>{p.t.voiceTitle}</div>
-      <button className="bb" style={{...btn,background:p.listening?"linear-gradient(135deg,#cc2200,#991100)":"linear-gradient(135deg,#4a2200,#7a4010)",color:"#fff8ee"}} onClick={p.startVoice}>
-        {p.listening?p.t.voiceListening:p.t.voiceBtn}
-      </button>
+      <button className="bb" style={{...btn,background:p.listening?"linear-gradient(135deg,#cc2200,#991100)":"linear-gradient(135deg,#4a2200,#7a4010)",color:"#fff8ee"}} onClick={p.startVoice}>{p.listening?p.t.voiceListening:p.t.voiceBtn}</button>
       {p.voiceText&&<div style={{marginTop:10,padding:"10px 14px",background:"rgba(255,248,230,0.7)",borderRadius:10,fontSize:13,color:"#9a6030",fontStyle:"italic"}}>Heard: "{p.voiceText}"</div>}
     </div>
-
     <button className="bb" style={{...btn,opacity:(!p.soil||!p.rainfall||!p.season)?0.5:1}} onClick={p.getRecommendations} disabled={p.loading||!p.soil||!p.rainfall||!p.season}>
       {p.loading?<><span style={spin}>⟳</span> {p.t.analysing}</>:p.t.getRecommendations}
     </button>
-
-    {/* Results */}
     {p.screen==="results"&&p.results.length>0&&(
       <div style={{marginTop:24}}>
-        <div style={{...lbl,marginBottom:16}}>
-          {p.t.topPicks} · {p.soil} soil · {p.rainfall} rain · {p.season}
-          {p.weather&&<span style={{marginLeft:10,fontSize:10,background:"rgba(120,60,0,0.08)",color:"#2a7a00",borderRadius:6,padding:"2px 8px"}}>Weather: {p.weather.rainfallMm}mm · {p.weather.avgTempC}°C</span>}
-        </div>
+        <div style={{...lbl,marginBottom:16}}>{p.t.topPicks} · {p.soil} soil · {p.rainfall} rain · {p.season}{p.weather&&<span style={{marginLeft:10,fontSize:10,background:"rgba(120,60,0,0.08)",color:"#2a7a00",borderRadius:6,padding:"2px 8px"}}>Weather: {p.weather.rainfallMm}mm · {p.weather.avgTempC}°C</span>}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:18}}>
           {p.results.map((crop,i)=>(
             <div key={crop.name} className="hw" onClick={()=>p.setExpanded(p.expanded===crop.name?null:crop.name)} style={{background:i===0?"linear-gradient(135deg,rgba(40,120,0,0.08),rgba(255,248,230,0.7))":"rgba(255,252,242,0.88)",border:`1.5px solid ${i===0?"rgba(40,120,0,0.3)":"rgba(180,120,40,0.2)"}`,borderRadius:18,padding:"22px",cursor:"pointer"}}>
               {i===0&&<div style={{fontSize:10,background:"rgba(180,80,0,0.12)",color:"#b85c00",borderRadius:6,padding:"2px 8px",fontWeight:700,marginBottom:8,display:"inline-block"}}>{p.t.topPick}</div>}
               <div style={{fontSize:32}}>{crop.icon}</div>
               <div style={{fontWeight:800,fontSize:18,marginTop:8}}>{crop.name}</div>
-              <div style={{marginTop:8,display:"flex",alignItems:"center",flexWrap:"wrap",gap:6}}>
-                <span style={p.bdg(crop.profit)}>{crop.profit==="High"?p.t.profitHigh:crop.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span>
-                <LiveTag live={crop.isLive}/>
-              </div>
-              <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:12,color:"#7a5030"}}>{p.t.mandiPrice}</span>
-                <span style={{fontWeight:800,color:"#2a7a00",fontSize:15}}>₹{crop.price.toLocaleString()}/q</span>
-              </div>
+              <div style={{marginTop:8,display:"flex",alignItems:"center",flexWrap:"wrap",gap:6}}><span style={p.bdg(crop.profit)}>{crop.profit==="High"?p.t.profitHigh:crop.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span><LiveTag live={crop.isLive}/></div>
+              <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"#7a5030"}}>{p.t.mandiPrice}</span><span style={{fontWeight:800,color:"#2a7a00",fontSize:15}}>₹{crop.price.toLocaleString()}/q</span></div>
               <RiskMeter value={crop.risk} lang={p.lang} showWarning={true}/>
               {p.expanded===crop.name&&(
                 <div style={{marginTop:14,paddingTop:14,borderTop:"1.5px solid rgba(180,120,40,0.2)"}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-                    {[{l:p.t.mandiPrice,v:`₹${crop.price.toLocaleString()}/q`},{l:p.t.yieldAcre,v:`${crop.yieldPerAcre} q`},{l:p.t.incomeAcre,v:`₹${(crop.price*crop.yieldPerAcre).toLocaleString()}`},{l:p.t.risk,v:`${crop.risk}%`}].map(m=>(
-                      <div key={m.l} style={{background:"rgba(255,248,230,0.7)",borderRadius:10,padding:"10px",textAlign:"center"}}>
-                        <div style={{fontSize:10,color:"#9a6030",marginBottom:3}}>{m.l}</div>
-                        <div style={{fontWeight:700,fontSize:13}}>{m.v}</div>
-                      </div>
-                    ))}
+                    {[{l:p.t.mandiPrice,v:`₹${crop.price.toLocaleString()}/q`},{l:p.t.yieldAcre,v:`${crop.yieldPerAcre} q`},{l:p.t.incomeAcre,v:`₹${(crop.price*crop.yieldPerAcre).toLocaleString()}`},{l:p.t.risk,v:`${crop.risk}%`}].map(m=>(<div key={m.l} style={{background:"rgba(255,248,230,0.7)",borderRadius:10,padding:"10px",textAlign:"center"}}><div style={{fontSize:10,color:"#9a6030",marginBottom:3}}>{m.l}</div><div style={{fontWeight:700,fontSize:13}}>{m.v}</div></div>))}
                   </div>
-                  <button className="bb" style={{...btn,marginTop:4}} onClick={e=>{e.stopPropagation();p.setProfitCrop(crop.name);p.go("profit");}}>{p.t.simulateProfit}</button>
+                  <PriceTrendChart crop={crop.name} currentPrice={crop.price} isLive={crop.isLive}/>
+                  <button className="bb" style={{...btn,marginTop:12}} onClick={e=>{e.stopPropagation();p.setProfitCrop(crop.name);p.go("profit");}}>{p.t.simulateProfit}</button>
                 </div>
               )}
             </div>
@@ -1519,39 +1764,99 @@ function DesktopScreens(p) {
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div>
         <div style={lbl}>{p.t.mandiIntelligence}</div>
-        <div style={{fontSize:13,color:"#9a6030"}}>
-          {p.liveCount>0?p.t.liveCount(p.liveCount):p.t.estimated}
-          {p.lastUpdated&&` · ${p.t.pricesUpdated} ${p.lastUpdated.toLocaleTimeString()}`}
-        </div>
+        <div style={{fontSize:13,color:"#9a6030"}}>{p.liveCount>0?p.t.liveCount(p.liveCount):p.t.estimated}{p.lastUpdated&&` · ${p.t.pricesUpdated} ${p.lastUpdated.toLocaleTimeString()}`}</div>
+        <div style={{fontSize:11,color:"#b85c00",marginTop:4,fontWeight:600}}>💡 Click any crop card to see 5-year price trend</div>
       </div>
-      <button className="ob" onClick={()=>p.refreshMandiPrices()} style={{padding:"10px 18px",background:"transparent",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:10,color:"#7a5030",cursor:"pointer",fontSize:13,fontWeight:600}}>
-        {p.mandiLoading?<span style={spin}>⟳</span>:p.t.refreshBtn}
-      </button>
+      <button className="ob" onClick={()=>p.refreshMandiPrices()} style={{padding:"10px 18px",background:"transparent",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:10,color:"#7a5030",cursor:"pointer",fontSize:13,fontWeight:600}}>{p.mandiLoading?<span style={spin}>⟳</span>:p.t.refreshBtn}</button>
     </div>
-    {p.mandiErr==="no_key"&&(
-      <div style={{background:"rgba(180,100,0,0.07)",border:"1px solid rgba(180,80,0,0.2)",borderRadius:14,padding:"14px 18px",marginBottom:16,fontSize:13,color:"#b85c00"}}>
-        {p.t.noKeyMsg}
-      </div>
-    )}
+    {p.mandiErr==="no_key"&&<div style={{background:"rgba(180,100,0,0.07)",border:"1px solid rgba(180,80,0,0.2)",borderRadius:14,padding:"14px 18px",marginBottom:16,fontSize:13,color:"#b85c00"}}>{p.t.noKeyMsg}</div>}
+
+    {/* Expanded card overlay */}
+    {p.expanded && CROP_META[p.expanded] && (()=>{
+      const name=p.expanded; const data=CROP_META[name];
+      const live=p.mandiPrices[name]; const price=live||data.fallbackPrice;
+      const trend=PRICE_HISTORY[name]||[];
+      const startPrice=trend[0]||price;
+      const totalGrowth=Math.round((price-startPrice)/startPrice*100);
+      return(
+        <div style={{background:"rgba(255,252,242,0.98)",border:"2px solid rgba(180,120,40,0.3)",borderRadius:20,padding:"28px",marginBottom:24,boxShadow:"0 8px 40px rgba(120,60,0,0.15)",position:"relative"}}>
+          <button onClick={()=>p.setExpanded(null)} style={{position:"absolute",top:16,right:16,background:"rgba(120,60,0,0.08)",border:"1px solid rgba(120,60,0,0.2)",borderRadius:99,width:32,height:32,cursor:"pointer",fontSize:16,color:"#7a3a00",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
+            <span style={{fontSize:48}}>{data.icon}</span>
+            <div>
+              <div style={{fontWeight:900,fontSize:24,color:"#3a1f00"}}>{name}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:20,fontWeight:900,color:live?"#2a7a00":"#b85c00"}}>₹{price.toLocaleString()}/q</span>
+                <LiveTag live={!!live}/>
+                <span style={bdg(data.profit)}>{data.profit} Profit</span>
+              </div>
+            </div>
+          </div>
+          {/* Stats row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:8}}>
+            {[
+              {l:"Yield/Acre",v:`${data.yieldPerAcre} q`,icon:"🌾"},
+              {l:"Income/Acre",v:`₹${(price*data.yieldPerAcre).toLocaleString()}`,icon:"💰"},
+              {l:"Supply Risk",v:`${data.risk}%`,icon:data.risk<30?"🟢":data.risk<50?"🟡":"🔴"},
+              {l:"5yr Growth",v:`${totalGrowth>=0?"+":""}${totalGrowth}%`,icon:totalGrowth>=0?"📈":"📉"},
+            ].map(m=>(
+              <div key={m.l} style={{background:"rgba(120,60,0,0.06)",borderRadius:12,padding:"12px 14px",textAlign:"center",border:"1px solid rgba(180,120,40,0.15)"}}>
+                <div style={{fontSize:18,marginBottom:4}}>{m.icon}</div>
+                <div style={{fontSize:13,fontWeight:800,color:"#3a1f00"}}>{m.v}</div>
+                <div style={{fontSize:10,color:"#9a6030",marginTop:2,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.07em"}}>{m.l}</div>
+              </div>
+            ))}
+          </div>
+          {/* Chart */}
+          <PriceTrendChart crop={name} currentPrice={price} isLive={!!live}/>
+          {/* Risk meter */}
+          <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(180,120,40,0.15)"}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#b85c00",marginBottom:8}}>Supply Risk Analysis</div>
+            <RiskMeter value={data.risk} lang={p.lang} showWarning={true}/>
+          </div>
+          {/* Simulate profit CTA */}
+          <button className="bb" style={{marginTop:20,width:"100%",padding:"14px",background:"linear-gradient(135deg,#7a3a00,#b85c00,#d47020)",border:"none",borderRadius:14,fontSize:14,fontWeight:700,color:"#fff8e8",cursor:"pointer",letterSpacing:"1px"}} onClick={()=>{p.setProfitCrop(name);p.go("profit");}}>
+            💰 Simulate Profit for {name}
+          </button>
+        </div>
+      );
+    })()}
+
+    {/* Crop grid */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16}}>
       {Object.entries(CROP_META).map(([name,data])=>{
-        const live=p.mandiPrices[name];
-        const price=live||data.fallbackPrice;
+        const live=p.mandiPrices[name]; const price=live||data.fallbackPrice;
+        const isExp=p.expanded===name;
+        const trend=PRICE_HISTORY[name]||[];
+        const growth=trend.length>=2?Math.round((price-trend[0])/trend[0]*100):null;
         return(
-          <div key={name} className="hw" style={{background:"rgba(255,252,242,0.88)",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:18,padding:"20px",cursor:"pointer"}} onClick={()=>p.setExpanded(p.expanded===name?null:name)}>
+          <div key={name} onClick={()=>p.setExpanded(isExp?null:name)}
+            style={{background:isExp?"rgba(255,248,230,0.98)":"rgba(255,252,242,0.88)",
+              border:`1.5px solid ${isExp?"rgba(180,80,0,0.4)":"rgba(180,120,40,0.2)"}`,
+              borderRadius:18,padding:"20px",cursor:"pointer",transition:"all .2s",
+              boxShadow:isExp?"0 4px 20px rgba(120,60,0,0.15)":"none"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:26}}>{data.icon}</span>
                 <div>
                   <div style={{fontWeight:700,fontSize:15}}>{name}</div>
-                  <div style={{fontSize:12,display:"flex",alignItems:"center"}}>
+                  <div style={{fontSize:12,display:"flex",alignItems:"center",gap:4}}>
                     <span style={{color:live?"#2a7a00":"#b85c00",fontWeight:700}}>₹{price.toLocaleString()}/q</span>
                     <LiveTag live={!!live}/>
                   </div>
                 </div>
               </div>
+              {growth!=null&&(
+                <span style={{fontSize:11,fontWeight:700,color:growth>=0?"#22c55e":"#ef4444",background:growth>=0?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",borderRadius:6,padding:"2px 7px"}}>
+                  {growth>=0?"+":""}{growth}% 5yr
+                </span>
+              )}
             </div>
             <RiskMeter value={data.risk} lang={p.lang}/>
+            <div style={{marginTop:8,fontSize:11,color:"#9a6030",textAlign:"center",fontWeight:600}}>
+              {isExp?"▲ Click to collapse":"▼ Click for 5-year trend"}
+            </div>
           </div>
         );
       })}
@@ -1563,39 +1868,15 @@ function DesktopScreens(p) {
       <div>
         <div style={card}>
           <div style={lbl}>💰 {p.t.profitSimTitle}</div>
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.selectCrop} (🟢 = live price)</div>
-            <select style={sel} value={p.profitCrop} onChange={e=>p.setProfitCrop(e.target.value)}>
-              {Object.keys(CROP_META).map(c=><option key={c} value={c}>{CROP_META[c].icon} {c}{p.isLive(c)?" 🟢":""}</option>)}
-            </select>
-          </div>
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.landArea}: <strong style={{color:"#3a1f00"}}>{p.area} {p.t.acres}</strong></div>
-            <input type="range" min="0.5" max="20" step="0.5" value={p.area} onChange={e=>p.setArea(Number(e.target.value))} style={{width:"100%",accentColor:"#7a3a00",cursor:"pointer"}}/>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#b87040",marginTop:4}}><span>0.5</span><span>20 {p.t.acres}</span></div>
-          </div>
-          {/* Cost input */}
-          <div>
-            <div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.costPerAcre}</div>
-            <input
-              type="number" min="0" step="500"
-              value={p.costPerAcre}
-              onChange={e=>p.setCostPerAcre(Number(e.target.value))}
-              placeholder={p.t.costPlaceholder}
-              style={{...inp,width:"100%"}}
-            />
-            <div style={{fontSize:11,color:"#b87040",marginTop:4}}>{p.t.costNote}</div>
-          </div>
+          <div style={{marginBottom:16}}><div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.selectCrop} (🟢 = live price)</div><select style={sel} value={p.profitCrop} onChange={e=>p.setProfitCrop(e.target.value)}>{Object.keys(CROP_META).map(c=><option key={c} value={c}>{CROP_META[c].icon} {c}{p.isLive(c)?" 🟢":""}</option>)}</select></div>
+          <div style={{marginBottom:16}}><div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.landArea}: <strong style={{color:"#3a1f00"}}>{p.area} {p.t.acres}</strong></div><input type="range" min="0.5" max="20" step="0.5" value={p.area} onChange={e=>p.setArea(Number(e.target.value))} style={{width:"100%",accentColor:"#7a3a00",cursor:"pointer"}}/><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#b87040",marginTop:4}}><span>0.5</span><span>20 {p.t.acres}</span></div></div>
+          <div><div style={{fontSize:12,color:"#7a5030",marginBottom:6}}>{p.t.costPerAcre}</div><input type="number" min="0" step="500" value={p.costPerAcre} onChange={e=>p.setCostPerAcre(Number(e.target.value))} placeholder={p.t.costPlaceholder} style={{...inp,width:"100%"}}/><div style={{fontSize:11,color:"#b87040",marginTop:4}}>{p.t.costNote}</div></div>
         </div>
         <div style={card}>
           <div style={lbl}>⚡ {p.t.quickCompare} ({p.area} ac)</div>
           {["Groundnut","Sesame","Chickpea","Moong"].map(c=>(
             <div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(180,120,40,0.12)"}}>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span>{CROP_META[c].icon}</span>
-                <span style={{fontWeight:600,fontSize:13}}>{c}</span>
-                <LiveTag live={p.isLive(c)}/>
-              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}><span>{CROP_META[c].icon}</span><span style={{fontWeight:600,fontSize:13}}>{c}</span><LiveTag live={p.isLive(c)}/></div>
               <div style={{fontWeight:700,fontSize:14,color:"#2a7a00"}}>₹{(p.area*CROP_META[c].yieldPerAcre*p.getPrice(c)).toLocaleString("en-IN")}</div>
             </div>
           ))}
@@ -1603,54 +1884,13 @@ function DesktopScreens(p) {
       </div>
       {p.profitMeta&&(
         <div style={{background:"rgba(255,252,242,0.95)",border:"1.5px solid rgba(40,120,0,0.2)",borderRadius:20,padding:"28px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
-            <span style={{fontSize:44}}>{p.profitMeta.icon}</span>
-            <div>
-              <div style={{fontWeight:800,fontSize:22}}>{p.profitCrop}</div>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
-                <span style={p.bdg(p.profitMeta.profit)}>{p.profitMeta.profit==="High"?p.t.profitHigh:p.profitMeta.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span>
-                <LiveTag live={p.isLive(p.profitCrop)}/>
-              </div>
-            </div>
-          </div>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}><span style={{fontSize:44}}>{p.profitMeta.icon}</span><div><div style={{fontWeight:800,fontSize:22}}>{p.profitCrop}</div><div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}><span style={p.bdg(p.profitMeta.profit)}>{p.profitMeta.profit==="High"?p.t.profitHigh:p.profitMeta.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span><LiveTag live={p.isLive(p.profitCrop)}/></div></div></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-            {[
-              {l:p.t.mandiPrice,v:`₹${p.getPrice(p.profitCrop).toLocaleString()}/q`,live:p.isLive(p.profitCrop)},
-              {l:p.t.yieldAcre,v:`${p.profitMeta.yieldPerAcre} q`},
-              {l:"Total Yield",v:`${(p.area*p.profitMeta.yieldPerAcre).toFixed(1)} q`},
-              {l:p.t.risk,v:`${p.profitMeta.risk}%`},
-            ].map(m=>(
-              <div key={m.l} style={{background:"rgba(40,120,0,0.06)",borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:11,color:"rgba(40,120,0,0.7)",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{m.l}{m.live&&<span style={{marginLeft:4,fontSize:9,color:"#2a7a00"}}>● LIVE</span>}</div>
-                <div style={{fontWeight:800,fontSize:16}}>{m.v}</div>
-              </div>
-            ))}
+            {[{l:p.t.mandiPrice,v:`₹${p.getPrice(p.profitCrop).toLocaleString()}/q`,live:p.isLive(p.profitCrop)},{l:p.t.yieldAcre,v:`${p.profitMeta.yieldPerAcre} q`},{l:"Total Yield",v:`${(p.area*p.profitMeta.yieldPerAcre).toFixed(1)} q`},{l:p.t.risk,v:`${p.profitMeta.risk}%`}].map(m=>(<div key={m.l} style={{background:"rgba(40,120,0,0.06)",borderRadius:12,padding:"14px 16px"}}><div style={{fontSize:11,color:"rgba(40,120,0,0.7)",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{m.l}{m.live&&<span style={{marginLeft:4,fontSize:9,color:"#2a7a00"}}>● LIVE</span>}</div><div style={{fontWeight:800,fontSize:16}}>{m.v}</div></div>))}
           </div>
-
-          {/* Gross Income */}
-          <div style={{background:"rgba(40,120,0,0.08)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:14,padding:"20px",textAlign:"center",marginBottom:12}}>
-            <div style={{fontSize:11,color:"rgba(40,120,0,0.7)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>
-              {p.t.grossIncome} {p.isLive(p.profitCrop)&&<span style={{fontSize:9,background:"rgba(40,120,0,0.15)",padding:"2px 6px",borderRadius:4,marginLeft:6}}>🟢 {p.t.livePrice}</span>}
-            </div>
-            <div style={{fontSize:32,fontWeight:900,color:"#2a7a00",letterSpacing:"-1px"}}>₹{p.profitEstimate}</div>
-            <div style={{fontSize:12,color:"#2a7a00",marginTop:4}}>{p.area} {p.t.acres} · {p.profitCrop}</div>
-          </div>
-
-          {/* Cost row */}
-          <div style={{background:"rgba(180,0,0,0.07)",border:"1px solid rgba(180,0,0,0.2)",borderRadius:14,padding:"16px 20px",textAlign:"center",marginBottom:12}}>
-            <div style={{fontSize:11,color:"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.totalCost}</div>
-            <div style={{fontSize:24,fontWeight:800,color:"#cc2200"}}>− ₹{p.totalCost.toLocaleString("en-IN")}</div>
-            <div style={{fontSize:11,color:"#cc2200",marginTop:4}}>₹{p.costPerAcre.toLocaleString()} × {p.area} {p.t.acres}</div>
-          </div>
-
-          {/* Net Profit */}
-          <div style={{background:p.netProfitAmt>=0?"rgba(40,120,0,0.08)":"rgba(180,0,0,0.07)",border:`1.5px solid ${p.netProfitAmt>=0?"rgba(40,120,0,0.25)":"rgba(180,0,0,0.2)"}`,borderRadius:14,padding:"20px",textAlign:"center"}}>
-            <div style={{fontSize:11,color:p.netProfitAmt>=0?"rgba(40,120,0,0.7)":"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{p.t.netProfit}</div>
-            <div style={{fontSize:38,fontWeight:900,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200",letterSpacing:"-1px"}}>
-              {p.netProfitAmt>=0?"":"−"}₹{Math.abs(p.netProfitAmt).toLocaleString("en-IN")}
-            </div>
-            <div style={{fontSize:12,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200",marginTop:6}}>{p.t.netProfitTitle}</div>
-          </div>
+          <div style={{background:"rgba(40,120,0,0.08)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:14,padding:"20px",textAlign:"center",marginBottom:12}}><div style={{fontSize:11,color:"rgba(40,120,0,0.7)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{p.t.grossIncome} {p.isLive(p.profitCrop)&&<span style={{fontSize:9,background:"rgba(40,120,0,0.15)",padding:"2px 6px",borderRadius:4,marginLeft:6}}>🟢 {p.t.livePrice}</span>}</div><div style={{fontSize:32,fontWeight:900,color:"#2a7a00",letterSpacing:"-1px"}}>₹{p.profitEstimate}</div><div style={{fontSize:12,color:"#2a7a00",marginTop:4}}>{p.area} {p.t.acres} · {p.profitCrop}</div></div>
+          <div style={{background:"rgba(180,0,0,0.07)",border:"1px solid rgba(180,0,0,0.2)",borderRadius:14,padding:"16px 20px",textAlign:"center",marginBottom:12}}><div style={{fontSize:11,color:"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.totalCost}</div><div style={{fontSize:24,fontWeight:800,color:"#cc2200"}}>− ₹{p.totalCost.toLocaleString("en-IN")}</div><div style={{fontSize:11,color:"#cc2200",marginTop:4}}>₹{p.costPerAcre.toLocaleString()} × {p.area} {p.t.acres}</div></div>
+          <div style={{background:p.netProfitAmt>=0?"rgba(40,120,0,0.08)":"rgba(180,0,0,0.07)",border:`1.5px solid ${p.netProfitAmt>=0?"rgba(40,120,0,0.25)":"rgba(180,0,0,0.2)"}`,borderRadius:14,padding:"20px",textAlign:"center"}}><div style={{fontSize:11,color:p.netProfitAmt>=0?"rgba(40,120,0,0.7)":"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{p.t.netProfit}</div><div style={{fontSize:38,fontWeight:900,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200",letterSpacing:"-1px"}}>{p.netProfitAmt>=0?"":"−"}₹{Math.abs(p.netProfitAmt).toLocaleString("en-IN")}</div><div style={{fontSize:12,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200",marginTop:6}}>{p.t.netProfitTitle}</div></div>
           <div style={{marginTop:16}}><RiskMeter value={p.profitMeta.risk} lang={p.lang}/></div>
         </div>
       )}
@@ -1658,26 +1898,14 @@ function DesktopScreens(p) {
   );
 
   if (p.screen==="alerts") return(<>
-    <div style={{marginBottom:20}}>
-      <div style={lbl}>{p.t.alertsTitle}</div>
-      <div style={{fontSize:13,color:"#9a6030"}}>{p.t.alertsDesc}</div>
-    </div>
+    <div style={{marginBottom:20}}><div style={lbl}>{p.t.alertsTitle}</div><div style={{fontSize:13,color:"#9a6030"}}>{p.t.alertsDesc}</div></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:18,marginBottom:24}}>
-      {[{crop:"Tomato",risk:72,reason:{en:"Many farmers in Karnataka & Maharashtra are growing this — prices may fall at harvest time.",hi:"कर्नाटक और महाराष्ट्र में बहुत किसान उगा रहे हैं — कटाई पर भाव गिर सकता है।",kn:"ಕರ್ನಾಟಕ ಮತ್ತು ಮಹಾರಾಷ್ಟ್ರದಲ್ಲಿ ಅನೇಕ ರೈತರು ಬೆಳೆಯುತ್ತಿದ್ದಾರೆ — ಕೊಯ್ಲಿನ ಸಮಯದಲ್ಲಿ ಬೆಲೆ ಕಡಿಮೆಯಾಗಬಹುದು."},alt:"Capsicum",altRisk:31},{crop:"Onion",risk:68,reason:{en:"A big harvest is expected across South India this season — market may be flooded.",hi:"इस मौसम दक्षिण भारत में भारी फसल आने की उम्मीद — बाज़ार में ज़्यादा माल आ सकता है।",kn:"ಈ ಸಾಲಿನಲ್ಲಿ ದಕ್ಷಿಣ ಭಾರತದಲ್ಲಿ ದೊಡ್ಡ ಫಸಲು ನಿರೀಕ್ಷಿತ — ಮಾರುಕಟ್ಟೆ ತುಂಬಿ ಹೋಗಬಹುದು."},alt:"Garlic",altRisk:38},{crop:"Potato",risk:48,reason:{en:"Cold storage in UP & MP is full — extra supply is pushing prices down.",hi:"UP और MP में कोल्ड स्टोरेज भरा है — अतिरिक्त माल से भाव दब रहे हैं।",kn:"UP ಮತ್ತು MP ನಲ್ಲಿ ಶೀತಲ ಸಂಗ್ರಹ ತುಂಬಿದೆ — ಹೆಚ್ಚು ಸಂಗ್ರಹದಿಂದ ಬೆಲೆ ಕಡಿಮೆಯಾಗುತ್ತಿದೆ."},alt:"Chickpea",altRisk:19}].map((a,i)=>(
+      {[{crop:"Tomato",risk:72,reason:{en:"Many farmers in Karnataka & Maharashtra are growing this — prices may fall at harvest time.",hi:"कर्नाटक और महाराष्ट्र में बहुत किसान उगा रहे हैं — कटाई पर भाव गिर सकता है।",kn:"ಕರ್ನಾಟಕ ಮತ್ತು ಮಹಾರಾಷ್ಟ್ರದಲ್ಲಿ ಅನೇಕ ರೈತರು ಬೆಳೆಯುತ್ತಿದ್ದಾರೆ — ಬೆಲೆ ಕಡಿಮೆಯಾಗಬಹುದು."},alt:"Capsicum",altRisk:31},{crop:"Onion",risk:68,reason:{en:"A big harvest is expected across South India this season — market may be flooded.",hi:"इस मौसम दक्षिण भारत में भारी फसल आने की उम्मीद — बाज़ार में ज़्यादा माल आ सकता है।",kn:"ಈ ಸಾಲಿನಲ್ಲಿ ದಕ್ಷಿಣ ಭಾರತದಲ್ಲಿ ದೊಡ್ಡ ಫಸಲು ನಿರೀಕ್ಷಿತ — ಮಾರುಕಟ್ಟೆ ತುಂಬಿ ಹೋಗಬಹುದು."},alt:"Garlic",altRisk:38},{crop:"Potato",risk:48,reason:{en:"Cold storage in UP & MP is full — extra supply is pushing prices down.",hi:"UP और MP में कोल्ड स्टोरेज भरा है — अतिरिक्त माल से भाव दब रहे हैं।",kn:"UP ಮತ್ತು MP ನಲ್ಲಿ ಶೀತಲ ಸಂಗ್ರಹ ತುಂಬಿದೆ — ಬೆಲೆ ಕಡಿಮೆಯಾಗುತ್ತಿದೆ."},alt:"Chickpea",altRisk:19}].map((a,i)=>(
         <div key={i} style={{background:"rgba(255,240,210,0.9)",border:"1.5px solid rgba(180,80,0,0.25)",borderRadius:18,padding:"22px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-            <span style={{fontWeight:800,fontSize:16}}>{CROP_META[a.crop]?.icon} {a.crop}</span>
-            <span style={{fontSize:10,background:"rgba(180,80,0,0.15)",color:"#b85c00",borderRadius:6,padding:"3px 8px",fontWeight:700}}>{p.t.riskBadge}</span>
-          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}><span style={{fontWeight:800,fontSize:16}}>{CROP_META[a.crop]?.icon} {a.crop}</span><span style={{fontSize:10,background:"rgba(180,80,0,0.15)",color:"#b85c00",borderRadius:6,padding:"3px 8px",fontWeight:700}}>{p.t.riskBadge}</span></div>
           <RiskMeter value={a.risk} lang={p.lang}/>
-          <div style={{marginTop:12,padding:"10px 12px",background:"rgba(255,248,230,0.7)",borderRadius:10}}>
-            <div style={{fontSize:11,color:"#9a6030",marginBottom:4}}>{p.t.alertReason}</div>
-            <div style={{fontSize:13,color:"#3a1f00",lineHeight:1.6}}>{a.reason[p.lang]||a.reason.en}</div>
-          </div>
-          <div style={{marginTop:12,padding:"10px 12px",background:"rgba(255,248,230,0.88)",borderRadius:10,border:"1.5px solid rgba(180,120,40,0.2)"}}>
-            <div style={{fontSize:11,color:"#2a7a00",marginBottom:4}}>{p.t.alertSwitch}</div>
-            <div style={{fontWeight:700,fontSize:14}}>{CROP_META[a.alt]?.icon} {a.alt}{p.isLive(a.alt)&&" 🟢"}</div>
-          </div>
+          <div style={{marginTop:12,padding:"10px 12px",background:"rgba(255,248,230,0.7)",borderRadius:10}}><div style={{fontSize:11,color:"#9a6030",marginBottom:4}}>{p.t.alertReason}</div><div style={{fontSize:13,color:"#3a1f00",lineHeight:1.6}}>{a.reason[p.lang]||a.reason.en}</div></div>
+          <div style={{marginTop:12,padding:"10px 12px",background:"rgba(255,248,230,0.88)",borderRadius:10,border:"1.5px solid rgba(180,120,40,0.2)"}}><div style={{fontSize:11,color:"#2a7a00",marginBottom:4}}>{p.t.alertSwitch}</div><div style={{fontWeight:700,fontSize:14}}>{CROP_META[a.alt]?.icon} {a.alt}{p.isLive(a.alt)&&" 🟢"}</div></div>
         </div>
       ))}
     </div>
@@ -1686,9 +1914,8 @@ function DesktopScreens(p) {
   return null;
 }
 
-// ══════════════════════════════════════════════════════════════════
-// MOBILE SCREENS
-// ══════════════════════════════════════════════════════════════════
+// MOBILE SCREENS (unchanged from your app.jsx)
+
 function MobileScreens(p) {
   const card={background:"rgba(255,252,242,0.88)",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:20,padding:"18px 20px",margin:"0 14px 12px",boxShadow:"0 4px 16px rgba(120,60,0,0.08)",backdropFilter:"blur(8px)"};
   const lbl={fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.12em",color:"#b85c00",marginBottom:10};
@@ -1701,25 +1928,36 @@ function MobileScreens(p) {
     <div style={{background:"linear-gradient(135deg,rgba(120,60,0,0.08),rgba(255,248,230,0.6))",border:"1px solid rgba(40,100,0,0.2)",borderRadius:24,padding:"26px 20px",margin:"0 14px 14px"}}>
       <div style={{fontSize:11,color:"#2a7a00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>🌾 {getSeasonLabel()}</div>
       <div style={{fontSize:30,fontWeight:900,letterSpacing:"-1px",lineHeight:1.1}}>{p.t.growSmarter}<br/><span style={{color:"#2a7a00"}}>{p.t.earnBetter}</span></div>
-      {p.weather&&<div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <div style={{background:"rgba(120,60,0,0.08)",borderRadius:10,padding:"8px 10px",border:"1px solid rgba(40,120,0,0.2)"}}>
-          <div style={{fontSize:9,color:"rgba(40,120,0,0.6)",fontWeight:700,textTransform:"uppercase"}}>🌧 {p.t.rainfallLevel}</div>
-          <div style={{fontSize:16,fontWeight:800,color:"#2a7a00"}}>{p.weather.rainfallMm}mm <span style={{fontSize:10}}>{p.weather.rainfallLevel}</span></div>
+      <div style={{marginTop:12,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:12,padding:"10px 12px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+          <div style={{fontSize:9,color:"#b85c00",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>🌧 Rainfall · 30d</div>
+          {p.weatherLoading?<div style={{fontSize:13,color:"#9a6030"}}>Detecting…</div>:p.weather?<><div style={{fontSize:20,fontWeight:900,color:"#2a7a00"}}>{p.weather.rainfallMm}<span style={{fontSize:10,fontWeight:400}}>mm</span></div><div style={{fontSize:9,color:"#7a5030",marginTop:2}}>{p.weather.rainfallLevel} conditions</div><div style={{height:3,background:"rgba(180,120,40,0.15)",borderRadius:99,marginTop:5,overflow:"hidden"}}><div style={{width:`${Math.min(100,Math.round(p.weather.rainfallMm/5))}%`,height:"100%",background:"#2a7a00",borderRadius:99}}/></div></>:<div style={{fontSize:10,color:"#b85c00",marginTop:4}}>Tap to detect</div>}
         </div>
-        <div style={{background:"rgba(120,60,0,0.08)",borderRadius:10,padding:"8px 10px",border:"1px solid rgba(180,100,0,0.2)"}}>
-          <div style={{fontSize:9,color:"rgba(180,100,0,0.6)",fontWeight:700,textTransform:"uppercase"}}>🌡 Temp</div>
-          <div style={{fontSize:16,fontWeight:800,color:"#b85c00"}}>{p.weather.avgTempC}°C <span style={{fontSize:10}}>avg</span></div>
-        </div>
-      </div>}
-      <button className="bb" style={{...btn,marginTop:16}} onClick={()=>p.go("plan")}>{p.t.startPlanning}</button>
+        {(()=>{
+          const t2=p.weather?.avgTempC;
+          const feel=!t2?null:t2<15?{c:"#1d4ed8",e:"🥶"}:t2<25?{c:"#2a7a00",e:"😊"}:t2<32?{c:"#b85c00",e:"☀️"}:{c:"#cc2200",e:"🌡"};
+          return(<div onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:12,padding:"10px 12px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+            <div style={{fontSize:9,color:"#b85c00",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{feel?.e||"🌡"} Temperature</div>
+            {p.weatherLoading?<div style={{fontSize:13,color:"#9a6030"}}>Detecting…</div>:p.weather?<><div style={{fontSize:20,fontWeight:900,color:feel?.c||"#3a1f00"}}>{t2}<span style={{fontSize:10,fontWeight:400}}>°C</span></div><div style={{fontSize:9,color:"#7a5030",marginTop:2}}>{p.location||"Your location"}</div></>:<div style={{fontSize:10,color:"#b85c00",marginTop:4}}>Tap to detect</div>}
+          </div>);
+        })()}
+      </div>
+      {(()=>{
+        const season=getCurrentSeason();
+        const allCrops=[...new Set(Object.values(CROPS_DB).flatMap(s=>Object.values(s).flatMap(l=>l[season]||[])))];
+        const scored=allCrops.map(c=>({name:c,price:p.mandiPrices[c]||CROP_META[c]?.fallbackPrice||0,icon:CROP_META[c]?.icon||"🌿",live:!!p.mandiPrices[c]})).sort((a,b)=>b.price-a.price).slice(0,4);
+        return(<div style={{marginTop:12,background:"rgba(255,252,242,0.9)",borderRadius:12,padding:"10px 12px",border:"1.5px solid rgba(180,120,40,0.2)"}}>
+          <div style={{fontSize:9,color:"#b85c00",fontWeight:700,textTransform:"uppercase",marginBottom:8}}>🔥 Trending This {season.charAt(0).toUpperCase()+season.slice(1)}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {scored.map((c,i)=>(<div key={c.name} style={{display:"flex",alignItems:"center",gap:4,background:i===0?"rgba(40,120,0,0.1)":"rgba(120,60,0,0.06)",border:`1px solid ${i===0?"rgba(40,120,0,0.25)":"rgba(180,120,40,0.15)"}`,borderRadius:8,padding:"4px 8px"}}><span style={{fontSize:14}}>{c.icon}</span><div><div style={{fontSize:10,fontWeight:700,color:"#3a1f00"}}>{c.name}</div><div style={{fontSize:9,color:c.live?"#2a7a00":"#9a6030"}}>₹{c.price.toLocaleString("en-IN")}</div></div>{i===0&&<span style={{fontSize:8,background:"rgba(40,120,0,0.15)",color:"#2a7a00",borderRadius:3,padding:"1px 4px",fontWeight:800}}>TOP</span>}</div>))}
+          </div>
+        </div>);
+      })()}
+      <button className="bb" style={{...btn,marginTop:14}} onClick={()=>p.go("plan")}>{p.t.startPlanning}</button>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"0 14px 12px"}}>
       {[{icon:"📊",l:p.t.marketPrices,s:p.liveCount>0?p.t.liveCount(p.liveCount):p.hasMandiKey?"Loading":p.t.estimated,t:"market"},{icon:"💰",l:p.t.profitSim,s:p.t.realPrices,t:"profit"},{icon:"⚠️",l:p.t.riskAlerts,s:p.t.warnings,t:"alerts"},{icon:"🎙️",l:p.t.voiceInput,s:p.t.krishiAI,t:"plan"}].map((item,i)=>(
-        <div key={i} onClick={()=>p.go(item.t)} style={{...card,margin:0,cursor:"pointer"}}>
-          <div style={{fontSize:22}}>{item.icon}</div>
-          <div style={{fontWeight:700,fontSize:13,marginTop:8}}>{item.l}</div>
-          <div style={{color:"#9a6030",fontSize:11,marginTop:3}}>{item.s}</div>
-        </div>
+        <div key={i} onClick={()=>p.go(item.t)} style={{...card,margin:0,cursor:"pointer"}}><div style={{fontSize:22}}>{item.icon}</div><div style={{fontWeight:700,fontSize:13,marginTop:8}}>{item.l}</div><div style={{color:"#9a6030",fontSize:11,marginTop:3}}>{item.s}</div></div>
       ))}
     </div>
   </>);
@@ -1727,242 +1965,151 @@ function MobileScreens(p) {
   if (p.screen==="plan"||p.screen==="results") return(<>
     <div style={card}>
       <div style={lbl}>📍 {p.t.locationLabel}</div>
-      <div style={{display:"flex",gap:8}}>
-        <input style={{...inp,flex:1}} placeholder={p.t.locationPlaceholder} value={p.location} onChange={e=>p.setLocation(e.target.value)}/>
-        <button style={{padding:"11px 13px",background:"rgba(255,248,230,0.85)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:12,fontSize:12,fontWeight:600,color:"#2a7a00",cursor:"pointer",whiteSpace:"nowrap"}} onClick={p.detectLocation}>
-          {p.locating?<span style={spin}>⟳</span>:"📍"}
-        </button>
-      </div>
+      <div style={{display:"flex",gap:8}}><input style={{...inp,flex:1}} placeholder={p.t.locationPlaceholder} value={p.location} onChange={e=>p.setLocation(e.target.value)}/><button style={{padding:"11px 13px",background:"rgba(255,248,230,0.85)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:12,fontSize:12,fontWeight:600,color:"#2a7a00",cursor:"pointer",whiteSpace:"nowrap"}} onClick={p.detectLocation}>{p.locating?<span style={spin}>⟳</span>:"📍"}</button></div>
       {p.locErr&&<div style={{marginTop:6,fontSize:11,color:"#cc2200"}}>⚠️ {p.locErr}</div>}
       {p.weatherLoading&&<div style={{marginTop:8,fontSize:12,color:"#9a6030"}}>{p.t.fetchingWeather}</div>}
       {p.weather&&<div style={{marginTop:10,padding:"10px",background:"rgba(255,248,230,0.88)",borderRadius:10,border:"1.5px solid rgba(180,120,40,0.2)",fontSize:12,color:"#2a7a00"}}>{`🌦 ${p.weather.rainfallMm}mm · ${p.weather.avgTempC}°C · ${p.weather.rainfallLevel}`}</div>}
     </div>
-
-    {/* Farm details — Visual Tiles */}
     <div style={card}>
       <div style={lbl}>🌱 {p.t.farmDetails}</div>
-
-      {/* Soil tiles */}
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>{p.t.soilType}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[
-            {val:"red",   img:"🌄", desc:p.t.soilOptions.red},
-            {val:"black", img:"🏔️", desc:p.t.soilOptions.black},
-            {val:"sandy", img:"🏜️", desc:p.t.soilOptions.sandy},
-            {val:"loamy", img:"🌿", desc:p.t.soilOptions.loamy},
-          ].map(s=>(
-            <div key={s.val} onClick={()=>p.setSoil(s.val)} style={{padding:"12px 8px",borderRadius:12,border:`2px solid ${p.soil===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.soil===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:22}}>{s.img}</div>
-              <div style={{fontSize:11,fontWeight:700,marginTop:5,color:p.soil===s.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{s.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Rainfall tiles */}
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>
-          {p.t.rainfallLevel} {p.weather&&<span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>}
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-          {[
-            {val:"low",    emoji:"☀️",  desc:p.t.rainfallOptions.low},
-            {val:"medium", emoji:"🌦️", desc:p.t.rainfallOptions.medium},
-            {val:"high",   emoji:"🌧️", desc:p.t.rainfallOptions.high},
-          ].map(r=>(
-            <div key={r.val} onClick={()=>p.setRainfall(r.val)} style={{padding:"12px 6px",borderRadius:12,border:`2px solid ${p.rainfall===r.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.rainfall===r.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:26}}>{r.emoji}</div>
-              <div style={{fontSize:10,fontWeight:700,marginTop:5,color:p.rainfall===r.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{r.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Season tiles */}
-      <div>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>
-          {p.t.seasonLabel} <span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {[
-            {val:"kharif",emoji:"🌱",desc:p.t.seasonOptions.kharif},
-            {val:"rabi",  emoji:"❄️",desc:p.t.seasonOptions.rabi},
-          ].map(s=>(
-            <div key={s.val} onClick={()=>p.setSeason(s.val)} style={{padding:"12px 8px",borderRadius:12,border:`2px solid ${p.season===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.season===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontSize:26}}>{s.emoji}</div>
-              <div style={{fontSize:11,fontWeight:700,marginTop:5,color:p.season===s.val?"#7a3a00":"#9a6030"}}>{s.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <div style={{marginBottom:16}}><div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>{p.t.soilType}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{val:"red",img:"🌄",desc:p.t.soilOptions.red},{val:"black",img:"🏔️",desc:p.t.soilOptions.black},{val:"sandy",img:"🏜️",desc:p.t.soilOptions.sandy},{val:"loamy",img:"🌿",desc:p.t.soilOptions.loamy}].map(s=>(<div key={s.val} onClick={()=>p.setSoil(s.val)} style={{padding:"12px 8px",borderRadius:12,border:`2px solid ${p.soil===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.soil===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:22}}>{s.img}</div><div style={{fontSize:11,fontWeight:700,marginTop:5,color:p.soil===s.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{s.desc}</div></div>))}</div></div>
+      <div style={{marginBottom:16}}><div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>{p.t.rainfallLevel} {p.weather&&<span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span>}</div><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>{[{val:"low",emoji:"☀️",desc:p.t.rainfallOptions.low},{val:"medium",emoji:"🌦️",desc:p.t.rainfallOptions.medium},{val:"high",emoji:"🌧️",desc:p.t.rainfallOptions.high}].map(r=>(<div key={r.val} onClick={()=>p.setRainfall(r.val)} style={{padding:"12px 6px",borderRadius:12,border:`2px solid ${p.rainfall===r.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.rainfall===r.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:26}}>{r.emoji}</div><div style={{fontSize:10,fontWeight:700,marginTop:5,color:p.rainfall===r.val?"#7a3a00":"#9a6030",lineHeight:1.3}}>{r.desc}</div></div>))}</div></div>
+      <div><div style={{fontSize:12,color:"#7a5030",marginBottom:8,fontWeight:600}}>{p.t.seasonLabel} <span style={{fontSize:9,background:"rgba(40,120,0,0.1)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:700}}>🟢 AUTO</span></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{val:"kharif",emoji:"🌱",desc:p.t.seasonOptions.kharif},{val:"rabi",emoji:"❄️",desc:p.t.seasonOptions.rabi}].map(s=>(<div key={s.val} onClick={()=>p.setSeason(s.val)} style={{padding:"12px 8px",borderRadius:12,border:`2px solid ${p.season===s.val?"#7a3a00":"rgba(180,120,40,0.2)"}`,background:p.season===s.val?"rgba(120,60,0,0.1)":"rgba(255,248,230,0.7)",cursor:"pointer",textAlign:"center",transition:"all .15s"}}><div style={{fontSize:26}}>{s.emoji}</div><div style={{fontSize:11,fontWeight:700,marginTop:5,color:p.season===s.val?"#7a3a00":"#9a6030"}}>{s.desc}</div></div>))}</div></div>
     </div>
-
-    <div style={card}>
-      <div style={lbl}>{p.t.voiceTitle}</div>
-      <button style={{...btn,background:p.listening?"linear-gradient(135deg,#cc2200,#991100)":"linear-gradient(135deg,#4a2200,#7a4010)",color:"#fff8ee"}} onClick={p.startVoice}>
-        {p.listening?p.t.voiceListening:p.t.voiceBtn}
-      </button>
-      {p.voiceText&&<div style={{marginTop:8,fontSize:12,color:"#9a6030",fontStyle:"italic"}}>"{p.voiceText}"</div>}
-    </div>
-    <div style={{margin:"0 14px 12px"}}>
-      <button className="bb" style={{...btn,opacity:(!p.soil||!p.rainfall||!p.season)?0.5:1}} onClick={p.getRecommendations} disabled={p.loading||!p.soil||!p.rainfall||!p.season}>
-        {p.loading?<><span style={spin}>⟳</span> {p.t.analysing}</>:p.t.getRecommendations}
-      </button>
-    </div>
+    <div style={card}><div style={lbl}>{p.t.voiceTitle}</div><button style={{...btn,background:p.listening?"linear-gradient(135deg,#cc2200,#991100)":"linear-gradient(135deg,#4a2200,#7a4010)",color:"#fff8ee"}} onClick={p.startVoice}>{p.listening?p.t.voiceListening:p.t.voiceBtn}</button>{p.voiceText&&<div style={{marginTop:8,fontSize:12,color:"#9a6030",fontStyle:"italic"}}>"{p.voiceText}"</div>}</div>
+    <div style={{margin:"0 14px 12px"}}><button className="bb" style={{...btn,opacity:(!p.soil||!p.rainfall||!p.season)?0.5:1}} onClick={p.getRecommendations} disabled={p.loading||!p.soil||!p.rainfall||!p.season}>{p.loading?<><span style={spin}>⟳</span> {p.t.analysing}</>:p.t.getRecommendations}</button></div>
     {p.screen==="results"&&p.results.map((crop,i)=>(
       <div key={crop.name} onClick={()=>p.setExpanded(p.expanded===crop.name?null:crop.name)} style={{...card,border:`1.5px solid ${i===0?"rgba(40,120,0,0.3)":"rgba(180,120,40,0.2)"}`}}>
         {i===0&&<div style={{fontSize:9,background:"rgba(180,80,0,0.12)",color:"#b85c00",borderRadius:5,padding:"2px 7px",fontWeight:700,marginBottom:6,display:"inline-block"}}>{p.t.topPick}</div>}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:28}}>{crop.icon}</span>
-            <div>
-              <div style={{fontWeight:800,fontSize:15}}>{crop.name}</div>
-              <div style={{fontSize:12,color:"#2a7a00",fontWeight:700}}>₹{crop.price.toLocaleString()}/q<LiveTag live={crop.isLive}/></div>
-            </div>
-          </div>
-        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:28}}>{crop.icon}</span><div><div style={{fontWeight:800,fontSize:15}}>{crop.name}</div><div style={{fontSize:12,color:"#2a7a00",fontWeight:700}}>₹{crop.price.toLocaleString()}/q<LiveTag live={crop.isLive}/></div></div></div></div>
         <RiskMeter value={crop.risk} lang={p.lang} showWarning={true}/>
       </div>
     ))}
   </>);
 
   if (p.screen==="market") return(<>
-    <div style={{...card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div><div style={lbl}>{p.t.mandiIntelligence}</div><div style={{fontSize:11,color:"#9a6030"}}>{p.liveCount>0?p.t.liveCount(p.liveCount):p.t.estimated}</div></div>
-      <button style={{padding:"8px 14px",background:"transparent",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:8,color:"#7a5030",cursor:"pointer",fontSize:12}} onClick={()=>p.refreshMandiPrices()}>
-        {p.mandiLoading?<span style={spin}>⟳</span>:p.t.refreshBtn}
-      </button>
-    </div>
+    <div style={{...card,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={lbl}>{p.t.mandiIntelligence}</div><div style={{fontSize:11,color:"#9a6030"}}>{p.liveCount>0?p.t.liveCount(p.liveCount):p.t.estimated}</div></div><button style={{padding:"8px 14px",background:"transparent",border:"1.5px solid rgba(180,120,40,0.2)",borderRadius:8,color:"#7a5030",cursor:"pointer",fontSize:12}} onClick={()=>p.refreshMandiPrices()}>{p.mandiLoading?<span style={spin}>⟳</span>:p.t.refreshBtn}</button></div>
     {p.mandiErr==="no_key"&&<div style={{...card,color:"#b85c00",fontSize:12}}>{p.t.noKeyMsg}</div>}
-    {Object.entries(CROP_META).map(([name,data])=>{
-      const live=p.mandiPrices[name];
-      const price=live||data.fallbackPrice;
-      return(
-        <div key={name} style={card}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:22}}>{data.icon}</span><div style={{fontWeight:700,fontSize:14}}>{name}</div></div>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontWeight:700,color:live?"#2a7a00":"#b85c00"}}>₹{price.toLocaleString()}/q</div>
-              <LiveTag live={!!live}/>
-            </div>
-          </div>
-          <RiskMeter value={data.risk} lang={p.lang}/>
-        </div>
-      );
-    })}
+    {Object.entries(CROP_META).map(([name,data])=>{const live=p.mandiPrices[name];const price=live||data.fallbackPrice;return(<div key={name} style={card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:22}}>{data.icon}</span><div style={{fontWeight:700,fontSize:14}}>{name}</div></div><div style={{textAlign:"right"}}><div style={{fontWeight:700,color:live?"#2a7a00":"#b85c00"}}>₹{price.toLocaleString()}/q</div><LiveTag live={!!live}/></div></div><RiskMeter value={data.risk} lang={p.lang}/></div>);})}
   </>);
 
   if (p.screen==="profit") return(<>
     <div style={card}>
       <div style={lbl}>💰 {p.t.profitSimTitle}</div>
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.selectCrop} (🟢 live)</div>
-        <select style={sel} value={p.profitCrop} onChange={e=>p.setProfitCrop(e.target.value)}>
-          {Object.keys(CROP_META).map(c=><option key={c} value={c}>{CROP_META[c].icon} {c}{p.isLive(c)?" 🟢":""}</option>)}
-        </select>
-      </div>
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.landArea}: <strong style={{color:"#3a1f00"}}>{p.area} {p.t.acres}</strong></div>
-        <input type="range" min="0.5" max="20" step="0.5" value={p.area} onChange={e=>p.setArea(Number(e.target.value))} style={{width:"100%",accentColor:"#7a3a00",cursor:"pointer"}}/>
-      </div>
-      <div>
-        <div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.costPerAcre}</div>
-        <input type="number" min="0" step="500" value={p.costPerAcre} onChange={e=>p.setCostPerAcre(Number(e.target.value))} placeholder={p.t.costPlaceholder} style={{...inp,width:"100%"}}/>
-      </div>
+      <div style={{marginBottom:14}}><div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.selectCrop} (🟢 live)</div><select style={sel} value={p.profitCrop} onChange={e=>p.setProfitCrop(e.target.value)}>{Object.keys(CROP_META).map(c=><option key={c} value={c}>{CROP_META[c].icon} {c}{p.isLive(c)?" 🟢":""}</option>)}</select></div>
+      <div style={{marginBottom:14}}><div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.landArea}: <strong style={{color:"#3a1f00"}}>{p.area} {p.t.acres}</strong></div><input type="range" min="0.5" max="20" step="0.5" value={p.area} onChange={e=>p.setArea(Number(e.target.value))} style={{width:"100%",accentColor:"#7a3a00",cursor:"pointer"}}/></div>
+      <div><div style={{fontSize:12,color:"#7a5030",marginBottom:4}}>{p.t.costPerAcre}</div><input type="number" min="0" step="500" value={p.costPerAcre} onChange={e=>p.setCostPerAcre(Number(e.target.value))} placeholder={p.t.costPlaceholder} style={{...inp,width:"100%"}}/></div>
     </div>
     {p.profitMeta&&(
       <div style={{...card,background:"rgba(255,252,242,0.95)",border:"1.5px solid rgba(180,120,40,0.2)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-          <span style={{fontSize:34}}>{p.profitMeta.icon}</span>
-          <div>
-            <div style={{fontWeight:800,fontSize:18}}>{p.profitCrop}</div>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
-              <span style={p.bdg(p.profitMeta.profit)}>{p.profitMeta.profit==="High"?p.t.profitHigh:p.profitMeta.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span>
-              <LiveTag live={p.isLive(p.profitCrop)}/>
-            </div>
-          </div>
-        </div>
-        {/* Gross income */}
-        <div style={{background:"rgba(40,120,0,0.08)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:12,padding:"16px",textAlign:"center",marginBottom:10}}>
-          <div style={{fontSize:10,color:"rgba(40,120,0,0.7)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.grossIncome}</div>
-          <div style={{fontSize:28,fontWeight:900,color:"#2a7a00",letterSpacing:"-1px"}}>₹{p.profitEstimate}</div>
-        </div>
-        {/* Cost */}
-        <div style={{background:"rgba(180,0,0,0.07)",border:"1px solid rgba(180,0,0,0.2)",borderRadius:12,padding:"14px",textAlign:"center",marginBottom:10}}>
-          <div style={{fontSize:10,color:"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.totalCost}</div>
-          <div style={{fontSize:22,fontWeight:800,color:"#cc2200"}}>− ₹{p.totalCost.toLocaleString("en-IN")}</div>
-        </div>
-        {/* Net profit */}
-        <div style={{background:p.netProfitAmt>=0?"rgba(40,120,0,0.08)":"rgba(180,0,0,0.07)",border:`1.5px solid ${p.netProfitAmt>=0?"rgba(40,120,0,0.25)":"rgba(180,0,0,0.2)"}`,borderRadius:12,padding:"18px",textAlign:"center"}}>
-          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>{p.t.netProfit}</div>
-          <div style={{fontSize:32,fontWeight:900,letterSpacing:"-1px",color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>
-            {p.netProfitAmt>=0?"":"−"}₹{Math.abs(p.netProfitAmt).toLocaleString("en-IN")}
-          </div>
-          <div style={{fontSize:11,marginTop:6,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>{p.t.netProfitTitle}</div>
-        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}><span style={{fontSize:34}}>{p.profitMeta.icon}</span><div><div style={{fontWeight:800,fontSize:18}}>{p.profitCrop}</div><div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}><span style={p.bdg(p.profitMeta.profit)}>{p.profitMeta.profit==="High"?p.t.profitHigh:p.profitMeta.profit==="Medium"?p.t.profitMed:p.t.profitLow}</span><LiveTag live={p.isLive(p.profitCrop)}/></div></div></div>
+        <div style={{background:"rgba(40,120,0,0.08)",border:"1px solid rgba(40,120,0,0.25)",borderRadius:12,padding:"16px",textAlign:"center",marginBottom:10}}><div style={{fontSize:10,color:"rgba(40,120,0,0.7)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.grossIncome}</div><div style={{fontSize:28,fontWeight:900,color:"#2a7a00",letterSpacing:"-1px"}}>₹{p.profitEstimate}</div></div>
+        <div style={{background:"rgba(180,0,0,0.07)",border:"1px solid rgba(180,0,0,0.2)",borderRadius:12,padding:"14px",textAlign:"center",marginBottom:10}}><div style={{fontSize:10,color:"rgba(180,0,0,0.6)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{p.t.totalCost}</div><div style={{fontSize:22,fontWeight:800,color:"#cc2200"}}>− ₹{p.totalCost.toLocaleString("en-IN")}</div></div>
+        <div style={{background:p.netProfitAmt>=0?"rgba(40,120,0,0.08)":"rgba(180,0,0,0.07)",border:`1.5px solid ${p.netProfitAmt>=0?"rgba(40,120,0,0.25)":"rgba(180,0,0,0.2)"}`,borderRadius:12,padding:"18px",textAlign:"center"}}><div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>{p.t.netProfit}</div><div style={{fontSize:32,fontWeight:900,letterSpacing:"-1px",color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>{p.netProfitAmt>=0?"":"−"}₹{Math.abs(p.netProfitAmt).toLocaleString("en-IN")}</div><div style={{fontSize:11,marginTop:6,color:p.netProfitAmt>=0?"#2a7a00":"#cc2200"}}>{p.t.netProfitTitle}</div></div>
         <div style={{marginTop:12}}><RiskMeter value={p.profitMeta.risk} lang={p.lang}/></div>
       </div>
     )}
   </>);
 
   if (p.screen==="alerts") return(<>
-    <div style={{...card}}>
-      <div style={lbl}>{p.t.alertsTitle}</div>
-      <div style={{fontSize:12,color:"#7a5030"}}>{p.t.alertsDesc}</div>
-    </div>
+    <div style={{...card}}><div style={lbl}>{p.t.alertsTitle}</div><div style={{fontSize:12,color:"#7a5030"}}>{p.t.alertsDesc}</div></div>
     {[{crop:"Tomato",risk:72,reason:{en:"Many farmers in Karnataka & Maharashtra are growing this — prices may fall at harvest time.",hi:"बहुत किसान उगा रहे हैं — कटाई पर भाव गिर सकता है।",kn:"ಅನೇಕ ರೈತರು ಬೆಳೆಯುತ್ತಿದ್ದಾರೆ — ಬೆಲೆ ಕಡಿಮೆಯಾಗಬಹುದು."},alt:"Capsicum",altRisk:31},{crop:"Onion",risk:68,reason:{en:"Big harvest expected across South India — market may be flooded.",hi:"दक्षिण भारत में भारी फसल — बाज़ार में ज़्यादा माल आ सकता है।",kn:"ದಕ್ಷಿಣ ಭಾರತದಲ್ಲಿ ಹೆಚ್ಚು ಫಸಲು — ಬೆಲೆ ಕಡಿಮೆಯಾಗಬಹುದು."},alt:"Garlic",altRisk:38},{crop:"Potato",risk:48,reason:{en:"Cold storage in UP & MP is full — extra supply pushing prices down.",hi:"UP/MP में कोल्ड स्टोरेज भरा है — भाव दब रहे हैं।",kn:"ಶೀತಲ ಸಂಗ್ರಹ ತುಂಬಿದೆ — ಬೆಲೆ ಕಡಿಮೆಯಾಗುತ್ತಿದೆ."},alt:"Chickpea",altRisk:19}].map((a,i)=>(
       <div key={i} style={{...card,background:"rgba(255,240,210,0.9)",border:"1.5px solid rgba(180,80,0,0.25)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-          <span style={{fontWeight:800}}>{CROP_META[a.crop]?.icon} {a.crop}</span>
-          <span style={{fontSize:10,background:"rgba(180,80,0,0.15)",color:"#b85c00",borderRadius:6,padding:"2px 8px",fontWeight:700}}>{p.t.riskBadge}</span>
-        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{fontWeight:800}}>{CROP_META[a.crop]?.icon} {a.crop}</span><span style={{fontSize:10,background:"rgba(180,80,0,0.15)",color:"#b85c00",borderRadius:6,padding:"2px 8px",fontWeight:700}}>{p.t.riskBadge}</span></div>
         <RiskMeter value={a.risk} lang={p.lang}/>
         <div style={{marginTop:10,fontSize:12,color:"#9a6030",lineHeight:1.6}}>{a.reason[p.lang]||a.reason.en}</div>
-        <div style={{marginTop:8,padding:"8px 10px",background:"rgba(120,60,0,0.08)",borderRadius:8,border:"1px solid rgba(40,120,0,0.25)"}}>
-          <div style={{fontSize:11,color:"#2a7a00",marginBottom:2}}>{p.t.alertSwitch}</div>
-          <div style={{fontSize:13,fontWeight:700}}>{CROP_META[a.alt]?.icon} {a.alt}</div>
-        </div>
+        <div style={{marginTop:8,padding:"8px 10px",background:"rgba(120,60,0,0.08)",borderRadius:8,border:"1px solid rgba(40,120,0,0.25)"}}><div style={{fontSize:11,color:"#2a7a00",marginBottom:2}}>{p.t.alertSwitch}</div><div style={{fontSize:13,fontWeight:700}}>{CROP_META[a.alt]?.icon} {a.alt}</div></div>
       </div>
     ))}
   </>);
   return null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  APP ROOT — auth flow → dashboard
-// ═══════════════════════════════════════════════════════════════════════════════
+//  APP ROOT 
 export default function App() {
-  const [history, setHistory] = useState(["splash"]);
-  const [userName, setUserName] = useState("");
+  const [history, setHistory]       = useState(["splash"]);
+  const [registered, setRegistered] = useState(null);   // { name, phone }
+  const [loginPhone, setLoginPhone] = useState("");
+  const [userName, setUserName]     = useState("");
 
-  const authScreen = history[history.length - 1];
-
-  const goTo = (screen) => setHistory(prev => [...prev, screen]);
+  const screen = history[history.length - 1];
+  const goTo   = (s) => setHistory(prev => [...prev, s]);
   const goBack = () => setHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
 
-  if (authScreen === "splash")
+  if (screen === "splash")
     return <SplashScreen onFinish={() => goTo("register")} />;
 
-  if (authScreen === "register")
+  // Welcome 
+  if (screen === "register")
     return <RegisterScreen
-      onSignUp={d => { setUserName(d.name); goTo("app"); }}
+      onSignUp={d => { setRegistered(d); goTo("welcome"); }}
       onNavigate={goTo}
       onBack={goBack} />;
 
-  if (authScreen === "login")
+  // Welcome (first-time only) 
+  if (screen === "welcome")
+    return (
+      <div style={{position:"fixed",inset:0,width:"100%",height:"100%",overflow:"hidden",
+        fontFamily:"'Cinzel',serif"}}>
+        <style>{AUTH_CSS}</style>
+        <div style={{position:"absolute",inset:0,background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",zIndex:0}}/>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:220,background:"radial-gradient(ellipse at 50% 0%,rgba(255,180,60,0.18) 0%,transparent 70%)",zIndex:1}}/>
+        <TopCropDeco/>
+        <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:5}}>
+          <svg viewBox="0 0 390 90" style={{width:"100%",display:"block"}} preserveAspectRatio="none">
+            <rect x="0" y="55" width="390" height="40" fill="#2a5000"/>
+            <path d="M0,60 Q100,56 200,60 Q300,64 390,60" stroke="#1e3a00" strokeWidth="2" fill="none" opacity="0.5"/>
+            {[...Array(30)].map((_,i)=>{const x=i/29*390,h=18+Math.sin(i*1.9)*8,lean=Math.sin(i*2.5)*7;return<line key={i} x1={x} y1="56" x2={x+lean} y2={56-h} stroke={i%3===0?"#5aaa00":"#3d8000"} strokeWidth="2" strokeLinecap="round" opacity={0.6+Math.sin(i)*0.35}/>;})  }
+          </svg>
+        </div>
+        <div style={{position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",gap:20,padding:"0 32px",boxSizing:"border-box",
+          paddingBottom:"15vh"}}>
+          <div style={{fontSize:64,lineHeight:1}}>🌾</div>
+          <div style={{fontSize:36,fontWeight:900,color:"#4a2200",textAlign:"center",
+            letterSpacing:"1px",lineHeight:1.15,fontFamily:"'Cinzel',serif"}}>
+            Welcome,<br/>{registered?.name}!
+          </div>
+          <div style={{fontSize:16,color:"#9a6030",fontFamily:"'Cormorant Garamond',serif",
+            fontStyle:"italic",fontWeight:900,textAlign:"center",lineHeight:1.7,maxWidth:420}}>
+            Your CropWise journey begins now.
+          </div>
+          <div style={{fontSize:13,color:"#b85c00",background:"rgba(255,252,242,0.88)",
+            border:"1px solid rgba(180,92,0,0.25)",borderRadius:12,padding:"12px 28px",
+            fontFamily:"'Lato',sans-serif",fontWeight:600,textAlign:"center",
+            backdropFilter:"blur(8px)",boxShadow:"0 2px 12px rgba(120,60,0,0.1)"}}>
+            📱 Use +91 {registered?.phone} to log in
+          </div>
+          <button
+            onClick={() => goTo("login")}
+            style={{marginTop:4,background:"linear-gradient(135deg,#7a3a00,#b85c00,#d47020)",
+              border:"none",borderRadius:50,padding:"15px 60px",cursor:"pointer",
+              fontFamily:"'Cinzel',serif",fontWeight:700,fontSize:15,letterSpacing:"2.5px",
+              color:"#fff8e8",textTransform:"uppercase",
+              boxShadow:"0 6px 24px rgba(140,60,0,0.4)"}}>
+            Log In →
+          </button>
+        </div>
+      </div>
+    );
+
+  // Login 
+  if (screen === "login")
     return <LoginScreen
-      onGetOtp={() => goTo("otp")}
+      onGetOtp={(phone) => { setLoginPhone(phone); goTo("otp"); }}
       onNavigate={goTo}
       onBack={goBack} />;
 
-  if (authScreen === "otp")
+  // OTP 
+  if (screen === "otp")
     return <OtpScreen
-      onLogin={() => goTo("app")}
+      phone={loginPhone}
+      onLogin={() => { setUserName(registered?.name || ""); goTo("app"); }}
       onNavigate={goTo}
       onBack={goBack} />;
 
+  // Dashboard 
   return <CropWiseDashboard
     userName={userName}
-    onLogout={() => { setHistory(["login"]); setUserName(""); }} />;
+    onLogout={() => { setHistory(["login"]); setUserName(""); setLoginPhone(""); }} />;
 }
