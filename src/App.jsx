@@ -394,6 +394,13 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
 
   const handleOtp = async () => {
 
+  setSubmitted(true);
+
+  if (phone.length !== 10) {
+    setError("Please enter a valid 10-digit number");
+    return;
+  }
+
   setLoading(true);
 
   const otp = generateOtp();
@@ -401,10 +408,12 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
   const result = await sendOtpViaSms(phone, otp);
 
   if (result.success) {
-    onGetOtp(phone, otp);
+    if (onGetOtp) {
+      onGetOtp(phone, otp);
+    }
     alert("OTP sent to your phone");
   } else {
-    alert(result.message);
+    setError(result.message || "Failed to send OTP");
   }
 
   setLoading(false);
