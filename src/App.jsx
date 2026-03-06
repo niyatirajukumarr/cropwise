@@ -401,7 +401,7 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
   const result = await sendOtpViaSms(phone, otp);
 
   if (result.success) {
-    setGeneratedOtp(otp);
+    onGetOtp(phone, otp);
     alert("OTP sent to your phone");
   } else {
     alert(result.message);
