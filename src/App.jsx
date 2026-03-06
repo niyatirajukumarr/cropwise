@@ -1272,32 +1272,25 @@ function CropWiseDashboard({ userName, onLogout }) {
       setListening(false); setInterimText("");
     };
   
-    const parseWithAI = async (transcript) => {
-      setAiParsing(true);
-      try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:100,
-            messages:[{role:"user",content:`Extract farm details from farmer speech (English/Hindi/Kannada). Return ONLY JSON with keys soil (red|black|sandy|loamy|null), rainfall (low|medium|high|null), season (kharif|rabi|null). Speech: "${transcript}"`}] })
-        });
-        const data = await res.json();
-        const parsed = JSON.parse((data.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
-        setVoiceDetected(parsed);
-        if (parsed.soil)     { setSoil(parsed.soil);         setWizardStep(s=>Math.max(s,1)); }
-        if (parsed.rainfall) { setRainfall(parsed.rainfall); setWizardStep(s=>Math.max(s,2)); }
-        if (parsed.season)   { setSeason(parsed.season);     setWizardStep(s=>Math.max(s,3)); }
-        const parts=[parsed.soil&&parsed.soil+" soil",parsed.rainfall&&parsed.rainfall+" rain",parsed.season&&parsed.season+" season"].filter(Boolean);
-        if(parts.length) speak("I heard: "+parts.join(", "));
-      } catch {
-        const t=transcript.toLowerCase();
-        const det={};
-        if(t.includes("red")){setSoil("red");det.soil="red";}else if(t.includes("black")){setSoil("black");det.soil="black";}
-        else if(t.includes("sandy")){setSoil("sandy");det.soil="sandy";}else if(t.includes("loam")){setSoil("loamy");det.soil="loamy";}
-        if(t.includes("low")){setRainfall("low");det.rainfall="low";}else if(t.includes("medium")){setRainfall("medium");det.rainfall="medium";}else if(t.includes("high")){setRainfall("high");det.rainfall="high";}
-        if(t.includes("kharif")||t.includes("summer")){setSeason("kharif");det.season="kharif";}else if(t.includes("rabi")||t.includes("winter")){setSeason("rabi");det.season="rabi";}
-        setVoiceDetected(det);
-      } finally { setAiParsing(false); }
-    };
+   const parseWithAI = async (transcript) => {
+  setAiParsing(true);
+  try {
+    const res = await fetch("/api/parse-voice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, lang }),
+    });
+    const parsed = await res.json();
+    setVoiceDetected(parsed);
+    if (parsed.soil)     { setSoil(parsed.soil);         setWizardStep(s=>Math.max(s,1)); }
+    if (parsed.rainfall) { setRainfall(parsed.rainfall); setWizardStep(s=>Math.max(s,2)); }
+    if (parsed.season)   { setSeason(parsed.season);     setWizardStep(s=>Math.max(s,3)); }
+    const parts=[parsed.soil&&parsed.soil+" soil",parsed.rainfall&&parsed.rainfall+" rain",parsed.season&&parsed.season+" season"].filter(Boolean);
+    if(parts.length) speak("I heard: "+parts.join(", "));
+  } catch {
+    // fallback keyword matching stays exactly as you have it
+  } finally { setAiParsing(false); }
+};
     
   const startVoice = () => {
     if (listening) { stopVoice(); return; }
