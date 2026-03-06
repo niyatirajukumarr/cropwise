@@ -2006,29 +2006,9 @@ function MobileScreens(p) {
 //  APP ROOT 
 export default function App() {
   const [history, setHistory]       = useState(["splash"]);
-  const [registered, setRegistered] = useState(null);   
+  const [registered, setRegistered] = useState(null);
   const [userName, setUserName]     = useState("");
-
-  const [generatedOtp, setGeneratedOtp] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleOtp = async () => {
-
-    setLoading(true);
-
-    const otp = generateOtp();
-
-    const result = await sendOtpViaSms(loginPhone, otp);
-
-    if (result.success) {
-      setGeneratedOtp(otp);
-      alert("OTP sent to your phone");
-    } else {
-      alert(result.message);
-    }
-
-    setLoading(false);
-  };
+  const [loginPhone, setLoginPhone] = useState("");
 
   const screen = history[history.length - 1];
   const goTo   = (s) => setHistory(prev => [...prev, s]);
