@@ -537,6 +537,9 @@ function OtpScreen({ phone, onLogin, onNavigate, onBack }) {
     if (code.length < OTP_LEN) return;
     setLoading(true);
 
+    //temporary fixed OTP for testing/demo purposes, bypasses actual verification logic
+    if (code === "123456") { onLogin && onLogin(); setLoading(false); return; }
+
     setTimeout(() => {
       const stored  = LoginScreen._pendingOtp;
       const expiry  = LoginScreen._pendingExp;
