@@ -2006,8 +2006,7 @@ function MobileScreens(p) {
 //  APP ROOT 
 export default function App() {
   const [history, setHistory]       = useState(["splash"]);
-  const [registered, setRegistered] = useState(null);   // { name, phone }
-  const [loginPhone, setLoginPhone] = useState("");
+  const [registered, setRegistered] = useState(null);   
   const [userName, setUserName]     = useState("");
 
   const [generatedOtp, setGeneratedOtp] = useState("");
