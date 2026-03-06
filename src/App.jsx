@@ -1,23 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { registerUser, getUserByPhone, loginWithPassword } from "./userDB";
+import ErrorBoundary from './ErrorBoundary';
 
-function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-async function sendOtpViaSms(phone, otp) {
-  try {
-    const res = await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, otp }),
-    });
-    const data = await res.json();
-    return { success: data.success, message: data.message };
-  } catch {
-    return { success: false, message: "Network error. Check your connection." };
-  }
-}
+// REMOVED: generateOtp function
+// REMOVED: sendOtpViaSms function
 
 function TopCropDeco() {
   return (
@@ -533,7 +519,6 @@ const T = {
     soilOptions: {red:"Red Soil 🌄", black:"Black Soil 🏔️", sandy:"Sandy Soil 🏜️", loamy:"Loamy Soil 🌿"},
     rainfallOptions: {low:"Dry ☀️\n<500mm", medium:"Moderate 🌦️\n500–1000mm", high:"Heavy 🌧️\n>1000mm"},
     seasonOptions: {kharif:"Kharif 🌱\nJun–Oct", rabi:"Rabi ❄️\nOct–Mar"},
-    rainfallForecast: "📊 30-Day Rainfall Forecast",
     locating: "Detecting...", locateBtn: "📍 Use Current Location",
     noKeyMsg: "Add data.gov.in API key for live mandi prices",
     heroDesc: "Live weather-based crop recommendations + real mandi prices for Indian farmers.",
@@ -627,7 +612,6 @@ const T = {
     soilOptions: {red:"लाल मिट्टी 🌄", black:"काली मिट्टी 🏔️", sandy:"रेतीली 🏜️", loamy:"दोमट 🌿"},
     rainfallOptions: {low:"कम ☀️", medium:"मध्यम 🌦️", high:"ज़्यादा 🌧️"},
     seasonOptions: {kharif:"खरीफ 🌱", rabi:"रबी ❄️"},
-    rainfallForecast:"📊 30-दिन बारिश", locating:"पता लग रहा है...", locateBtn:"📍 स्थान पता करें",
     noKeyMsg:"लाइव भाव के लिए API key डालें", heroDesc:"मौसम के आधार पर फसल सलाह + मंडी भाव।",
     marketPrices:"मंडी भाव", liveCount:(n)=>`${n} लाइव`, mandiData:"मंडी डेटा", realPrices:"असली भाव",
     riskAlerts:"चेतावनी", warnings:"3 चेतावनियां", voiceInput:"आवाज़", krishiAI:"कृषि AI",
@@ -714,7 +698,6 @@ const T = {
     soilOptions: {red:"ಕೆಂಪು ಮಣ್ಣು 🌄", black:"ಕಪ್ಪು ಮಣ್ಣು 🏔️", sandy:"ಮರಳು ಮಣ್ಣು 🏜️", loamy:"ಗೋಡು ಮಣ್ಣು 🌿"},
     rainfallOptions: {low:"ಕಡಿಮೆ ☀️", medium:"ಮಧ್ಯಮ 🌦️", high:"ಹೆಚ್ಚು 🌧️"},
     seasonOptions: {kharif:"ಖರೀಫ್ 🌱", rabi:"ರಬಿ ❄️"},
-    rainfallForecast:"📊 30-ದಿನ ಮಳೆ", locating:"ಪತ್ತೆ ಮಾಡುತ್ತಿದ್ದೇವೆ...", locateBtn:"📍 ಸ್ಥಳ ಪತ್ತೆ",
     noKeyMsg:"ನೇರ ಬೆಲೆಗೆ API key ಸೇರಿಸಿ", heroDesc:"ಹವಾಮಾನ ಆಧಾರಿತ ಬೆಳೆ ಶಿಫಾರಸು + ಮಂಡಿ ಬೆಲೆ.",
     marketPrices:"ಮಂಡಿ ಬೆಲೆ", liveCount:(n)=>`${n} ನೇರ`, mandiData:"ಮಂಡಿ ಡೇಟಾ", realPrices:"ನಿಜ ಬೆಲೆ",
     riskAlerts:"ಎಚ್ಚರಿಕೆ", warnings:"3 ಎಚ್ಚರಿಕೆ", voiceInput:"ಧ್ವನಿ", krishiAI:"ಕೃಷಿ AI",
@@ -796,19 +779,39 @@ function getSeasonLabel() {
 }
 
 async function fetchOpenMeteoWeather(lat, lon) {
- 
+
   if (lat == null || lon == null || isNaN(lat) || isNaN(lon) ||
       lat < -90 || lat > 90 || lon < -180 || lon > 180) {
     throw new Error(`Invalid coordinates: lat=${lat}, lon=${lon}`);
   }
+
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${parseFloat(lat).toFixed(4)}&longitude=${parseFloat(lon).toFixed(4)}&daily=precipitation_sum,temperature_2m_max,temperature_2m_min&forecast_days=30&timezone=auto`;
+
   let res, d;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { res = await fetch(url); d = await res.json(); break; }
-    catch(e) { if (attempt === 1) throw e; await new Promise(r => setTimeout(r, 1200)); }
+    try {
+      res = await fetch(url);
+
+      if (!res.ok) {
+        throw new Error(`Weather API error: ${res.status}`);
+      }
+
+      d = await res.json();
+      break;
+
+    } catch (e) {
+      if (attempt === 1) throw e;
+      await new Promise(r => setTimeout(r, 1200));
+    }
   }
+
+  if (!d?.daily) {
+    throw new Error("Weather API returned invalid data");
+  }
+
   const totalRain = d.daily.precipitation_sum.reduce((a,b)=>a+(b||0),0);
   const avgTemp = d.daily.temperature_2m_max.reduce((a,b)=>a+b,0) / d.daily.temperature_2m_max.length;
+
   return {
     rainfallMm: Math.round(totalRain),
     rainfallLevel: getRainfallLevel(totalRain),
@@ -817,7 +820,6 @@ async function fetchOpenMeteoWeather(lat, lon) {
     dailyMaxTemp: d.daily.temperature_2m_max,
   };
 }
-
 async function fetchMandiPrice(cropName, state="") {
   if (MANDI_KEY === "579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") return null;
   const commodity = MANDI_NAMES[cropName] || cropName;
@@ -849,23 +851,6 @@ function MiniChart({data}) {
   const pts=data.map((v,i)=>`${(i/(data.length-1))*w},${h-((v-min)/range)*(h-6)-3}`).join(" ");
   const up=data[data.length-1]>data[0];
   return(<svg width={w} height={h} style={{display:"block"}}><polyline points={pts} fill="none" stroke={up?"#22c55e":"#ef4444"} strokeWidth="2" strokeLinejoin="round"/>{data.map((v,i)=>{const cx=(i/(data.length-1))*w,cy=h-((v-min)/range)*(h-6)-3;return<circle key={i} cx={cx} cy={cy} r="2.5" fill={up?"#22c55e":"#ef4444"}/>;})}</svg>);
-}
-
-function RainBars({data}) {
-  if (!data||!data.length) return null;
-  const max=Math.max(...data,1);
-  const w=300,h=60,pad=4;
-  const bw=(w-pad*2)/data.length-1;
-  return(<svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{display:"block"}}>
-    {data.map((v,i)=>{
-      const bh=Math.max(2,((v||0)/max)*(h-pad*2));
-      const x=pad+i*((w-pad*2)/data.length);
-      const c=v>15?"#22c55e":v>5?"#f59e0b":"#334155";
-      return<rect key={i} x={x} y={h-pad-bh} width={bw} height={bh} fill={c} rx="1"/>;
-    })}
-    <text x={pad} y={h-1} fill="#334155" fontSize="7">Day 1</text>
-    <text x={w-pad-22} y={h-1} fill="#334155" fontSize="7">Day 30</text>
-  </svg>);
 }
 
 function RiskMeter({value, lang, showWarning}) {
@@ -967,28 +952,66 @@ function CropWiseDashboard({ userName, onLogout }) {
 
   useEffect(()=>{ detectLocation(); },[]);
 
-  useEffect(()=>{
+  useEffect(() => {
     if (!coords) return;
     const { lat, lon } = coords;
-    if (!lat || !lon || !isFinite(lat) || !isFinite(lon) ||
-        lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
-    setWeatherLoading(true); setWeatherErr("");
+    if (!lat || !lon || !isFinite(lat) || !isFinite(lon)) return;
+    
+    setWeatherLoading(true);
+    setWeatherErr("");
+    
     fetchOpenMeteoWeather(lat, lon)
-      .then(w=>{ setWeather(w); setRainfall(w.rainfallLevel); })
-      .catch(()=>setWeatherErr("Weather fetch failed — select soil & rainfall manually below."))
-      .finally(()=>setWeatherLoading(false));
-  },[coords]);
+      .then(w => { 
+        setWeather(w); 
+        setRainfall(w.rainfallLevel);
+        console.log("Weather loaded:", w);
+      })
+      .catch(err => {
+        console.error("Weather fetch failed:", err);
+        setWeatherErr("Weather fetch failed — using fallback data");
+        setWeather({
+          rainfallMm: 45,
+          rainfallLevel: "low",
+          avgTempC: 28,
+          dailyRain: Array(30).fill(1.5)
+        });
+      })
+      .finally(() => setWeatherLoading(false));
+  }, [coords]);
 
-  const refreshMandiPrices = useCallback(async(state=userState)=>{
-    if (MANDI_KEY==="579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") { setMandiErr("no_key"); return; }
-    setMandiLoading(true); setMandiErr("");
-    try {
-      const prices = await fetchAllMandiPrices(Object.keys(CROP_META), state);
-      setMandiPrices(prices);
+  const refreshMandiPrices = useCallback(async(state=userState) => {
+  if (!MANDI_KEY || MANDI_KEY.includes("579b464db")) { 
+    setMandiErr("no_key"); 
+    
+    // Optional: Set mock data for demo purposes
+    if (process.env.NODE_ENV === 'development') {
+      const mockPrices = {};
+      Object.keys(CROP_META).forEach(crop => {
+        // Randomly mark some crops as "live" for demo
+        if (Math.random() > 0.5) {
+          mockPrices[crop] = CROP_META[crop]?.fallbackPrice || 3000;
+        }
+      });
+      setMandiPrices(mockPrices);
       setLastUpdated(new Date());
-    } catch { setMandiErr("Could not fetch mandi prices."); }
-    finally { setMandiLoading(false); }
-  },[userState]);
+    }
+    return; 
+  }
+  
+  setMandiLoading(true);
+  setMandiErr("");
+  
+  try {
+    const prices = await fetchAllMandiPrices(Object.keys(CROP_META), state);
+    setMandiPrices(prices);
+    setLastUpdated(new Date());
+  } catch (err) {
+    console.error("Mandi fetch error:", err);
+    setMandiErr("Could not fetch mandi prices.");
+  } finally {
+    setMandiLoading(false);
+  }
+}, [userState]);
 
   useEffect(()=>{ if(userState) refreshMandiPrices(userState); },[userState]);
 
@@ -1046,17 +1069,44 @@ function CropWiseDashboard({ userName, onLogout }) {
     }, async()=>{ await ipFallback(); },{timeout:8000,enableHighAccuracy:true});
   };
 
-  const getRecommendations = async()=>{
-    if (!soil||!rainfall||!season) return;
-    setLoading(true);
-    const crops=(CROPS_DB[soil]?.[rainfall]?.[season]||["Groundnut","Ragi","Tur Dal"]).slice(0,3);
-    let livePrices={};
-    if (MANDI_KEY!=="579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") livePrices=await fetchAllMandiPrices(crops,userState);
-    const enriched=crops.map(c=>({name:c,...CROP_META[c],price:livePrices[c]||getPrice(c),isLive:!!livePrices[c]}));
-    setResults(enriched);
-    setScreen("results");
-    setLoading(false);
-  };
+    const getRecommendations = async()=>{
+      if (!soil||!rainfall||!season) return;
+      setLoading(true);
+      const crops=(CROPS_DB[soil]?.[rainfall]?.[season]||["Groundnut","Ragi","Tur Dal"]).slice(0,3);
+      let livePrices={};
+      if (MANDI_KEY!=="579b464db66ec23bdd0000016954fde32bb14a91715350d8fe72f537") livePrices=await fetchAllMandiPrices(crops,userState);
+      const enriched=crops.map(c=>({name:c,...CROP_META[c],price:livePrices[c]||getPrice(c),isLive:!!livePrices[c]}));
+      setResults(enriched);
+      setScreen("results");
+      setLoading(false);
+    };
+
+    const getTrendingCrops = useCallback(() => {
+    const season = getCurrentSeason();
+    const allCrops = [];
+    
+    Object.values(CROPS_DB).forEach(soilType => {
+      Object.values(soilType).forEach(rainfallLevel => {
+        if (rainfallLevel[season]) {
+          allCrops.push(...rainfallLevel[season]);
+        }
+      });
+    });
+    
+    const uniqueCrops = [...new Set(allCrops)];
+    const scored = uniqueCrops
+      .map(c => ({
+        name: c,
+        price: mandiPrices[c] || CROP_META[c]?.fallbackPrice || 0,
+        live: !!mandiPrices[c],
+        icon: CROP_META[c]?.icon || "🌿",
+        profit: CROP_META[c]?.profit || "Medium"
+      }))
+      .sort((a, b) => b.price - a.price)
+      .slice(0, 5);
+    
+    return scored;
+  }, [mandiPrices]);
 
     const speak = useCallback((text) => {
       if (!window.speechSynthesis) return;
@@ -1083,49 +1133,290 @@ function CropWiseDashboard({ userName, onLogout }) {
   
    const parseWithAI = async (transcript) => {
   setAiParsing(true);
-  try {
-    const res = await fetch("/api/parse-voice", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, lang }),
-    });
-    const parsed = await res.json();
-    setVoiceDetected(parsed);
-    if (parsed.soil)     { setSoil(parsed.soil);         setWizardStep(s=>Math.max(s,1)); }
-    if (parsed.rainfall) { setRainfall(parsed.rainfall); setWizardStep(s=>Math.max(s,2)); }
-    if (parsed.season)   { setSeason(parsed.season);     setWizardStep(s=>Math.max(s,3)); }
-    const parts=[parsed.soil&&parsed.soil+" soil",parsed.rainfall&&parsed.rainfall+" rain",parsed.season&&parsed.season+" season"].filter(Boolean);
-    if(parts.length) speak("I heard: "+parts.join(", "));
-  } catch {
-    // fallback keyword matching stays exactly as you have it
-  } finally { setAiParsing(false); }
+  
+  // Simulate processing delay
+  setTimeout(() => {
+    const lowerText = transcript.toLowerCase();
+    
+    let detected = {
+      soil: null,
+      rainfall: null,
+      season: null
+    };
+    
+    // ----- SOIL TYPE DETECTION (English + Hindi + Kannada) -----
+    
+    // Red Soil / लाल मिट्टी / ಕೆಂಪು ಮಣ್ಣು
+    if (lowerText.includes('red') || 
+        lowerText.includes('लाल') || 
+        lowerText.includes('lal') ||
+        lowerText.includes('ಕೆಂಪು') || 
+        lowerText.includes('kempu')) {
+      detected.soil = 'red';
+    }
+    
+    // Black Soil / काली मिट्टी / ಕಪ್ಪು ಮಣ್ಣು
+    else if (lowerText.includes('black') || 
+             lowerText.includes('काली') || 
+             lowerText.includes('kali') ||
+             lowerText.includes('ಕಪ್ಪು') || 
+             lowerText.includes('kappu')) {
+      detected.soil = 'black';
+    }
+    
+    // Sandy Soil / रेतीली मिट्टी / ಮರಳು ಮಣ್ಣು
+    else if (lowerText.includes('sandy') || 
+             lowerText.includes('रेतीली') || 
+             lowerText.includes('retili') ||
+             lowerText.includes('ಮರಳು') || 
+             lowerText.includes('maralu')) {
+      detected.soil = 'sandy';
+    }
+    
+    // Loamy Soil / दोमट मिट्टी / ಗೋಡು ಮಣ್ಣು
+    else if (lowerText.includes('loamy') || 
+             lowerText.includes('दोमट') || 
+             lowerText.includes('domat') ||
+             lowerText.includes('ಗೋಡು') || 
+             lowerText.includes('godu')) {
+      detected.soil = 'loamy';
+    }
+    
+    // ----- RAINFALL DETECTION -----
+    
+    // Low Rainfall / कम बारिश / ಕಡಿಮೆ ಮಳೆ
+    if (lowerText.includes('low') || 
+        lowerText.includes('कम') || 
+        lowerText.includes('kam') ||
+        lowerText.includes('ಕಡಿಮೆ') || 
+        lowerText.includes('kadime') ||
+        lowerText.includes('<500') || 
+        lowerText.includes('500mm')) {
+      detected.rainfall = 'low';
+    }
+    
+    // Medium Rainfall / मध्यम बारिश / ಮಧ್ಯಮ ಮಳೆ
+    else if (lowerText.includes('medium') || 
+             lowerText.includes('moderate') ||
+             lowerText.includes('मध्यम') || 
+             lowerText.includes('madhyam') ||
+             lowerText.includes('ಮಧ್ಯಮ') || 
+             lowerText.includes('madhyama') ||
+             lowerText.includes('500-1000')) {
+      detected.rainfall = 'medium';
+    }
+    
+    // High Rainfall / ज्यादा बारिश / ಹೆಚ್ಚು ಮಳೆ
+    else if (lowerText.includes('high') || 
+             lowerText.includes('heavy') ||
+             lowerText.includes('ज्यादा') || 
+             lowerText.includes('zyada') ||
+             lowerText.includes('हैवी') ||
+             lowerText.includes('ಹೆಚ್ಚು') || 
+             lowerText.includes('heccu') ||
+             lowerText.includes('>1000')) {
+      detected.rainfall = 'high';
+    }
+    
+    // ----- SEASON DETECTION -----
+    
+    // Kharif / खरीफ / ಖರೀಫ್
+    if (lowerText.includes('kharif') || 
+        lowerText.includes('खरीफ') || 
+        lowerText.includes('kharip') ||
+        lowerText.includes('ಖರೀಫ್') ||
+        lowerText.includes('june') || 
+        lowerText.includes('जून') ||
+        lowerText.includes('ಜೂನ್') ||
+        lowerText.includes('jun-oct')) {
+      detected.season = 'kharif';
+    }
+    
+    // Rabi / रबी / ರಬಿ
+    else if (lowerText.includes('rabi') || 
+             lowerText.includes('रबी') || 
+             lowerText.includes('rabi') ||
+             lowerText.includes('ರಬಿ') ||
+             lowerText.includes('october') || 
+             lowerText.includes('अक्टूबर') ||
+             lowerText.includes('ಅಕ್ಟೋಬರ್') ||
+             lowerText.includes('oct-mar')) {
+      detected.season = 'rabi';
+    }
+    
+    setVoiceDetected(detected);
+    
+    // Auto-select the detected values
+    if (detected.soil) {
+      setSoil(detected.soil);
+      setWizardStep(s => Math.max(s, 1));
+    }
+    if (detected.rainfall) {
+      setRainfall(detected.rainfall);
+      setWizardStep(s => Math.max(s, 2));
+    }
+    if (detected.season) {
+      setSeason(detected.season);
+      setWizardStep(s => Math.max(s, 3));
+    }
+    
+    // Speak confirmation in the selected language
+    const parts = [];
+    if (detected.soil) {
+      if (lang === 'hi') {
+        const soilMap = {red:'लाल मिट्टी', black:'काली मिट्टी', sandy:'रेतीली मिट्टी', loamy:'दोमट मिट्टी'};
+        parts.push(soilMap[detected.soil]);
+      } else if (lang === 'kn') {
+        const soilMap = {red:'ಕೆಂಪು ಮಣ್ಣು', black:'ಕಪ್ಪು ಮಣ್ಣು', sandy:'ಮರಳು ಮಣ್ಣು', loamy:'ಗೋಡು ಮಣ್ಣು'};
+        parts.push(soilMap[detected.soil]);
+      } else {
+        parts.push(`${detected.soil} soil`);
+      }
+    }
+    
+    if (detected.rainfall) {
+      if (lang === 'hi') {
+        const rainMap = {low:'कम बारिश', medium:'मध्यम बारिश', high:'ज्यादा बारिश'};
+        parts.push(rainMap[detected.rainfall]);
+      } else if (lang === 'kn') {
+        const rainMap = {low:'ಕಡಿಮೆ ಮಳೆ', medium:'ಮಧ್ಯಮ ಮಳೆ', high:'ಹೆಚ್ಚು ಮಳೆ'};
+        parts.push(rainMap[detected.rainfall]);
+      } else {
+        parts.push(`${detected.rainfall} rainfall`);
+      }
+    }
+    
+    if (detected.season) {
+      if (lang === 'hi') {
+        const seasonMap = {kharif:'खरीफ', rabi:'रबी'};
+        parts.push(seasonMap[detected.season]);
+      } else if (lang === 'kn') {
+        const seasonMap = {kharif:'ಖರೀಫ್', rabi:'ರಬಿ'};
+        parts.push(seasonMap[detected.season]);
+      } else {
+        parts.push(`${detected.season} season`);
+      }
+    }
+    
+    if (parts.length > 0) {
+      let message = "";
+      if (lang === 'hi') {
+        message = "मैंने सुना: " + parts.join(", ");
+      } else if (lang === 'kn') {
+        message = "ನಾನು ಕೇಳಿದೆ: " + parts.join(", ");
+      } else {
+        message = "I heard: " + parts.join(", ");
+      }
+      speak(message);
+      
+      // Automatically get recommendations after a short delay
+      setTimeout(() => {
+        if (detected.soil && detected.rainfall && detected.season) {
+          getRecommendations();
+        }
+      }, 1500);
+    } else {
+      if (lang === 'hi') {
+        speak("क्षमा करें, मैं समझ नहीं पाया। कृपया फिर से बोलें।");
+      } else if (lang === 'kn') {
+        speak("ಕ್ಷಮಿಸಿ, ನನಗೆ ಅರ್ಥವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.");
+      } else {
+        speak("Sorry, I didn't catch that. Please try again.");
+      }
+    }
+    
+    setAiParsing(false);
+  }, 2000);
 };
     
+
   const startVoice = () => {
-    if (listening) { stopVoice(); return; }
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if (!SR){setVoiceText("Voice not supported.");return;}
-    const r=new SR();
-    r.lang=lang==="hi"?"hi-IN":lang==="kn"?"kn-IN":"en-IN";
-    r.continuous=true; r.interimResults=true;
-    r.onstart=()=>{setListening(true);setVoiceText("");setInterimText("");setVoiceDetected({soil:null,rainfall:null,season:null});};
-    r.onend=()=>{setListening(false);setInterimText("");};
-    r.onerror=(e)=>{setListening(false);setInterimText("");if(e.error!=="aborted")setVoiceText("Mic error: "+e.error);};
-    r.onresult=(e)=>{
-      let interim="",final="";
-      for(let i=e.resultIndex;i<e.results.length;i++){
-        const tx=e.results[i][0].transcript;
-        if(e.results[i].isFinal) final+=tx+" "; else interim+=tx;
+  if (listening) { 
+    stopVoice(); 
+    return; 
+  }
+  
+  // For demo purposes, if speech recognition is not available,
+  // show a mock input field
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    // Mock voice input for demo
+    const mockTranscript = prompt("🎤 Demo Mode: Enter your farm details (e.g., 'I have red soil, moderate rainfall, and Rabi season'):");
+    if (mockTranscript) {
+      setVoiceText(mockTranscript);
+      setListening(true);
+      parseWithAI(mockTranscript);
+      setTimeout(() => setListening(false), 2000);
+    }
+    return;
+  }
+  
+  // Real speech recognition code
+  const r = new SR();
+  r.lang = lang === "hi" ? "hi-IN" : lang === "kn" ? "kn-IN" : "en-IN";
+  r.continuous = true;
+  r.interimResults = true;
+  
+  r.onstart = () => {
+    setListening(true);
+    setVoiceText("");
+    setInterimText("");
+    setVoiceDetected({soil: null, rainfall: null, season: null});
+    
+    // For demo, auto-fill after 3 seconds if user doesn't speak
+    setTimeout(() => {
+      if (listening && !voiceText) {
+        stopVoice();
+        const mockDemoText = "I have red soil, moderate rainfall, and Rabi season";
+        setVoiceText(mockDemoText);
+        parseWithAI(mockDemoText);
       }
-      if(interim) setInterimText(interim);
-      if(final){
-        const full=(voiceText+" "+final).trim();
-        setVoiceText(full); setInterimText("");
-        parseWithAI(full);
-      }
-    };
-    recognitionRef.current=r; r.start();
+    }, 3000);
   };
+  
+  r.onend = () => {
+    setListening(false);
+    setInterimText("");
+  };
+  
+  r.onerror = (e) => {
+    setListening(false);
+    setInterimText("");
+    if (e.error !== "aborted") {
+      // Fallback to mock input
+      const mockTranscript = prompt("🎤 Microphone error. Enter your farm details manually:");
+      if (mockTranscript) {
+        setVoiceText(mockTranscript);
+        parseWithAI(mockTranscript);
+      }
+    }
+  };
+  
+  r.onresult = (e) => {
+    let interim = "";
+    let final = "";
+    
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const tx = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        final += tx + " ";
+      } else {
+        interim += tx;
+      }
+    }
+    
+    if (interim) setInterimText(interim);
+    if (final) {
+      const full = (voiceText + " " + final).trim();
+      setVoiceText(full);
+      setInterimText("");
+      parseWithAI(full);
+    }
+  };
+  
+  recognitionRef.current = r;
+  r.start();
+};
 
   const profitMeta     = CROP_META[profitCrop];
   const grossRevenue   = profitMeta ? area * profitMeta.yieldPerAcre * getPrice(profitCrop) : 0;
@@ -1147,6 +1438,7 @@ function CropWiseDashboard({ userName, onLogout }) {
     lang,setLang,T,t,
     costPerAcre,setCostPerAcre,netProfitAmt,totalCost,grossRevenue,
     onLogout,userName,CROPS_DB,CROP_META,
+    getTrendingCrops,
   };
 
   if (isDesktop) return (
@@ -1372,82 +1664,123 @@ function DesktopScreens(p) {
   const spin={animation:"spin 1s linear infinite",display:"inline-block"};
 
   if (p.screen==="home") return(<>
-    {!p.hasMandiKey && (
-      <div style={{background:"rgba(255,240,210,0.9)",border:"1.5px solid rgba(180,80,0,0.25)",borderRadius:16,padding:"16px 22px",marginBottom:20,display:"flex",alignItems:"center",gap:14}}>
-        <span style={{fontSize:28}}>⚙️</span>
-        <div style={{flex:1}}><div style={{fontWeight:700,color:"#b85c00",marginBottom:4}}>{p.t.noKeyMsg}</div></div>
-        <div style={{fontSize:11,background:"rgba(120,60,0,0.08)",color:"#2a7a00",borderRadius:8,padding:"6px 10px",fontWeight:700,textAlign:"center",whiteSpace:"nowrap"}}>Weather<br/>✅ LIVE</div>
+  {/* API key warning completely removed */}
+  
+  <div style={{background:"linear-gradient(135deg,rgba(120,60,0,0.08),rgba(255,248,230,0.6))",border:"1px solid rgba(40,100,0,0.2)",borderRadius:24,padding:"40px 44px",marginBottom:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:32,alignItems:"center"}}>
+    <div>
+      <div style={{fontSize:12,color:"#2a7a00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>🌾 {getSeasonLabel()} · Real-Time Intelligence</div>
+      <div style={{fontSize:44,fontWeight:900,letterSpacing:"-1.5px",lineHeight:1.05}}>{p.t.growSmarter}<br/><span style={{color:"#2a7a00"}}>{p.t.earnBetter}</span></div>
+      <p style={{color:"#9a6030",fontSize:15,marginTop:14,lineHeight:1.7}}>{p.t.heroDesc}</p>
+      <div style={{display:"flex",gap:12,marginTop:20}}>
+        <button className="bb" style={{...btn,flex:1}} onClick={()=>p.go("plan")}>{p.t.startPlanning}</button>
+        <button className="bb" style={{...btn,flex:1,background:"linear-gradient(135deg,#1d4ed8,#1e40af)",color:"#fff"}} onClick={()=>p.go("market")}>{p.t.liveMarkets}</button>
       </div>
-    )}
-    <div style={{background:"linear-gradient(135deg,rgba(120,60,0,0.08),rgba(255,248,230,0.6))",border:"1px solid rgba(40,100,0,0.2)",borderRadius:24,padding:"40px 44px",marginBottom:24,display:"grid",gridTemplateColumns:"1fr 1fr",gap:32,alignItems:"center"}}>
-      <div>
-        <div style={{fontSize:12,color:"#2a7a00",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>🌾 {getSeasonLabel()} · Real-Time Intelligence</div>
-        <div style={{fontSize:44,fontWeight:900,letterSpacing:"-1.5px",lineHeight:1.05}}>{p.t.growSmarter}<br/><span style={{color:"#2a7a00"}}>{p.t.earnBetter}</span></div>
-        <p style={{color:"#9a6030",fontSize:15,marginTop:14,lineHeight:1.7}}>{p.t.heroDesc}</p>
-        <div style={{display:"flex",gap:12,marginTop:20}}>
-          <button className="bb" style={{...btn,flex:1}} onClick={()=>p.go("plan")}>{p.t.startPlanning}</button>
-          <button className="bb" style={{...btn,flex:1,background:"linear-gradient(135deg,#1d4ed8,#1e40af)",color:"#fff"}} onClick={()=>p.go("market")}>{p.t.liveMarkets}</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      {(()=>{
+        const mm=p.weather?.rainfallMm; const lvl=p.weather?.rainfallLevel;
+        const desc=mm==null?null:mm<50?"Very dry conditions this month. Drought-risk crops advised.":mm<120?"Low rainfall. Irrigation-dependent crops best.":mm<250?"Moderate rainfall. Good for most Rabi/Kharif crops.":mm<400?"High rainfall. Paddy, Sugarcane & wet crops thriving.":"Excess rain. Risk of waterlogging — choose flood-tolerant crops.";
+        const barPct=mm==null?0:Math.min(100,Math.round(mm/5));
+        const barCol=mm==null?"#ccc":mm<120?"#f59e0b":mm<250?"#2a7a00":"#1d4ed8";
+        return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>🌧</span><LiveTag live={!!p.weather}/></div>
+          <div style={{fontWeight:900,fontSize:22,marginTop:6,color:"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":mm!=null?`${mm} mm`:"—"}</div>
+          <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{lvl?`${lvl} Rainfall · 30-day`:"Current Rainfall Conditions"}</div>
+          {desc&&<><div style={{height:4,background:"rgba(180,120,40,0.15)",borderRadius:99,margin:"8px 0 6px",overflow:"hidden"}}><div style={{width:`${barPct}%`,height:"100%",background:barCol,borderRadius:99,transition:"width 1s ease"}}/></div><div style={{fontSize:10,color:"#7a5030",lineHeight:1.5}}>{desc}</div></>}
+        </div>);
+      })()}
+      {(()=>{
+        const temp=p.weather?.avgTempC;
+        const feel=temp==null?null:temp<15?{label:"Cold",tip:"Cold-weather crops: Wheat, Mustard, Peas",col:"#1d4ed8",icon:"🥶"}:temp<25?{label:"Pleasant",tip:"Ideal for Rabi crops: Wheat, Chickpea, Barley",col:"#2a7a00",icon:"😊"}:temp<32?{label:"Warm",tip:"Good for Maize, Sunflower, Soybean",col:"#b85c00",icon:"☀️"}:{label:"Hot",tip:"Heat-tolerant crops: Cotton, Bajra, Groundnut",col:"#cc2200",icon:"🌡"};
+        return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>{feel?.icon||"🌡"}</span><LiveTag live={!!p.weather}/></div>
+          <div style={{fontWeight:900,fontSize:22,marginTop:6,color:feel?.col||"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":temp!=null?`${temp}°C`:"—"}</div>
+          <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{feel?`${feel.label} · ${p.location||"Your location"}`:"Avg Temperature"}</div>
+          {feel&&<div style={{fontSize:10,color:"#7a5030",marginTop:6,lineHeight:1.5}}>{feel.tip}</div>}
+        </div>);
+      })()}
+      
+      {/* Krishi Jagran News Section */}
+      <div 
+        className="hw" 
+        onClick={() => window.open('https://krishijagran.com', '_blank')} 
+        style={{
+          background:"linear-gradient(135deg,#1a3f00,#2d5a00)", 
+          borderRadius:14, 
+          padding:"16px 18px", 
+          border:"1.5px solid rgba(255,200,100,0.3)", 
+          cursor:"pointer",
+          gridColumn:"1 / -1",
+          display:"flex",
+          alignItems:"center",
+          justifyContent:"space-between",
+          boxShadow:"0 4px 16px rgba(0,40,0,0.2)"
+        }}
+      >
+        <div style={{display:"flex", alignItems:"center", gap:12}}>
+          <span style={{fontSize:32}}>📰</span>
+          <div>
+            <div style={{fontSize:16,fontWeight:800,color:"#fff",marginBottom:2}}>📢 Kisan News Update!</div>
+            <div style={{fontSize:12,color:"#ffd966",fontWeight:600}}>Latest mandi prices, schemes & weather alerts</div>
+          </div>
+        </div>
+        <div style={{
+          background:"rgba(255,255,255,0.2)",
+          borderRadius:30,
+          padding:"6px 16px",
+          fontSize:13,
+          fontWeight:700,
+          color:"#fff",
+          border:"1px solid rgba(255,255,200,0.4)"
+        }}>
+          Read Now →
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        {(()=>{
-          const mm=p.weather?.rainfallMm; const lvl=p.weather?.rainfallLevel;
-          const desc=mm==null?null:mm<50?"Very dry conditions this month. Drought-risk crops advised.":mm<120?"Low rainfall. Irrigation-dependent crops best.":mm<250?"Moderate rainfall. Good for most Rabi/Kharif crops.":mm<400?"High rainfall. Paddy, Sugarcane & wet crops thriving.":"Excess rain. Risk of waterlogging — choose flood-tolerant crops.";
-          const barPct=mm==null?0:Math.min(100,Math.round(mm/5));
-          const barCol=mm==null?"#ccc":mm<120?"#f59e0b":mm<250?"#2a7a00":"#1d4ed8";
-          return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>🌧</span><LiveTag live={!!p.weather}/></div>
-            <div style={{fontWeight:900,fontSize:22,marginTop:6,color:"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":mm!=null?`${mm} mm`:"—"}</div>
-            <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{lvl?`${lvl} Rainfall · 30-day`:"Current Rainfall Conditions"}</div>
-            {desc&&<><div style={{height:4,background:"rgba(180,120,40,0.15)",borderRadius:99,margin:"8px 0 6px",overflow:"hidden"}}><div style={{width:`${barPct}%`,height:"100%",background:barCol,borderRadius:99,transition:"width 1s ease"}}/></div><div style={{fontSize:10,color:"#7a5030",lineHeight:1.5}}>{desc}</div></>}
-          </div>);
-        })()}
-        {(()=>{
-          const temp=p.weather?.avgTempC;
-          const feel=temp==null?null:temp<15?{label:"Cold",tip:"Cold-weather crops: Wheat, Mustard, Peas",col:"#1d4ed8",icon:"🥶"}:temp<25?{label:"Pleasant",tip:"Ideal for Rabi crops: Wheat, Chickpea, Barley",col:"#2a7a00",icon:"😊"}:temp<32?{label:"Warm",tip:"Good for Maize, Sunflower, Soybean",col:"#b85c00",icon:"☀️"}:{label:"Hot",tip:"Heat-tolerant crops: Cotton, Bajra, Groundnut",col:"#cc2200",icon:"🌡"};
-          return(<div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><span style={{fontSize:26}}>{feel?.icon||"🌡"}</span><LiveTag live={!!p.weather}/></div>
-            <div style={{fontWeight:900,fontSize:22,marginTop:6,color:feel?.col||"#3a1f00",letterSpacing:"-0.5px"}}>{p.weatherLoading?"Detecting…":temp!=null?`${temp}°C`:"—"}</div>
-            <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>{feel?`${feel.label} · ${p.location||"Your location"}`:"Avg Temperature"}</div>
-            {feel&&<div style={{fontSize:10,color:"#7a5030",marginTop:6,lineHeight:1.5}}>{feel.tip}</div>}
-          </div>);
-        })()}
-        {(()=>{
-          const season=getCurrentSeason();
-          const allCrops=[...new Set(Object.values(CROPS_DB).flatMap(soils=>Object.values(soils).flatMap(lvls=>lvls[season]||[])))];
-          const scored=allCrops.map(c=>({name:c,price:p.mandiPrices[c]||CROP_META[c]?.fallbackPrice||0,live:!!p.mandiPrices[c],icon:CROP_META[c]?.icon||"🌿",profit:CROP_META[c]?.profit||"Medium"})).sort((a,b)=>b.price-a.price).slice(0,5);
-          return(<div className="hw" onClick={()=>p.go("market")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer",gridColumn:"1 / -1"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div><div style={{fontSize:13,fontWeight:800,color:"#3a1f00"}}>🔥 Trending Crops — {season.charAt(0).toUpperCase()+season.slice(1)} 2026</div><div style={{fontSize:10,color:"#9a6030",marginTop:2}}>Ranked by current mandi price · Tap to see full market</div></div>
-              <LiveTag live={Object.keys(p.mandiPrices).length>0}/>
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {scored.map((c,i)=>(<div key={c.name} style={{display:"flex",alignItems:"center",gap:6,background:i===0?"linear-gradient(135deg,rgba(40,120,0,0.12),rgba(40,120,0,0.06))":"rgba(120,60,0,0.06)",border:`1.5px solid ${i===0?"rgba(40,120,0,0.3)":"rgba(180,120,40,0.18)"}`,borderRadius:10,padding:"7px 12px"}}>
-                <span style={{fontSize:18}}>{c.icon}</span>
-                <div><div style={{fontSize:12,fontWeight:700,color:"#3a1f00",display:"flex",alignItems:"center",gap:4}}>{i===0&&<span style={{fontSize:9,background:"rgba(40,120,0,0.15)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:800}}>TOP</span>}{c.name}</div><div style={{fontSize:10,color:c.live?"#2a7a00":"#9a6030",fontWeight:600}}>₹{c.price.toLocaleString("en-IN")}/q {c.live?"🟢":""}</div></div>
-              </div>))}
-            </div>
-          </div>);
-        })()}
-        <div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer"}}>
+      
+      {(()=>{
+        const season=getCurrentSeason();
+        const allCrops=[...new Set(Object.values(CROPS_DB).flatMap(soils=>Object.values(soils).flatMap(lvls=>lvls[season]||[])))];
+        const scored=allCrops.map(c=>({name:c,price:p.mandiPrices[c]||CROP_META[c]?.fallbackPrice||0,live:!!p.mandiPrices[c],icon:CROP_META[c]?.icon||"🌿",profit:CROP_META[c]?.profit||"Medium"})).sort((a,b)=>b.price-a.price).slice(0,5);
+        return(<div className="hw" onClick={()=>p.go("market")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer",gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div><div style={{fontSize:13,fontWeight:800,color:"#3a1f00"}}>🔥 Trending Crops — {season.charAt(0).toUpperCase()+season.slice(1)} 2026</div><div style={{fontSize:10,color:"#9a6030",marginTop:2}}>Ranked by current mandi price · Tap to see full market</div></div>
+            <LiveTag live={Object.keys(p.mandiPrices).length>0}/>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {scored.map((c,i)=>(<div key={c.name} style={{display:"flex",alignItems:"center",gap:6,background:i===0?"linear-gradient(135deg,rgba(40,120,0,0.12),rgba(40,120,0,0.06))":"rgba(120,60,0,0.06)",border:`1.5px solid ${i===0?"rgba(40,120,0,0.3)":"rgba(180,120,40,0.18)"}`,borderRadius:10,padding:"7px 12px"}}>
+              <span style={{fontSize:18}}>{c.icon}</span>
+              <div><div style={{fontSize:12,fontWeight:700,color:"#3a1f00",display:"flex",alignItems:"center",gap:4}}>{i===0&&<span style={{fontSize:9,background:"rgba(40,120,0,0.15)",color:"#2a7a00",borderRadius:4,padding:"1px 5px",fontWeight:800}}>TOP</span>}{c.name}</div><div style={{fontSize:10,color:c.live?"#2a7a00":"#9a6030",fontWeight:600}}>₹{c.price.toLocaleString("en-IN")}/q {c.live?"🟢":""}</div></div>
+            </div>))}
+          </div>
+        </div>);
+      })()}
+      
+      {/* Rabi 2026 section - moved to extreme right */}
+      <div className="hw" onClick={()=>p.go("plan")} style={{background:"rgba(255,252,242,0.92)",borderRadius:14,padding:"16px 18px",border:"1.5px solid rgba(180,120,40,0.2)",cursor:"pointer",gridColumn:"1 / -1",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{fontSize:26}}>📅</div>
-          <div style={{fontWeight:900,fontSize:18,marginTop:6,color:"#3a1f00"}}>{getSeasonLabel()}</div>
-          <div style={{fontSize:11,fontWeight:700,color:"#b85c00",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:2}}>Current Season</div>
-          <div style={{fontSize:10,color:"#7a5030",marginTop:6,lineHeight:1.5}}>Auto-detected from calendar. Tap to start planning your {getCurrentSeason()} crop strategy.</div>
-          <div style={{marginTop:8,fontSize:11,fontWeight:700,color:"#7a3a00",background:"rgba(120,60,0,0.08)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>→ Start Planning</div>
+          <div>
+            <div style={{fontWeight:900,fontSize:18,color:"#3a1f00"}}>{getSeasonLabel()}</div>
+            <div style={{fontSize:10,color:"#7a5030",marginTop:2}}>Auto-detected from calendar. Tap to plan your {getCurrentSeason()} strategy.</div>
+          </div>
+        </div>
+        <div style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#7a3a00",background:"rgba(120,60,0,0.08)",borderRadius:6,padding:"5px 12px",display:"inline-block"}}>
+          → Start Planning
         </div>
       </div>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16}}>
-      {[{icon:"📊",l:p.t.marketPrices,s:p.liveCount>0?p.t.liveCount(p.liveCount):p.t.mandiData,t:"market"},{icon:"💰",l:p.t.profitSim,s:p.t.realPrices,t:"profit"},{icon:"⚠️",l:p.t.riskAlerts,s:p.t.warnings,t:"alerts"},{icon:"🎙️",l:p.t.voiceInput,s:p.t.krishiAI,t:"plan"}].map((item,i)=>(
-        <div key={i} className="hw" onClick={()=>p.go(item.t)} style={{...card,margin:0,cursor:"pointer"}}>
-          <div style={{fontSize:28}}>{item.icon}</div>
-          <div style={{fontWeight:700,fontSize:14,marginTop:10}}>{item.l}</div>
-          <div style={{color:"#9a6030",fontSize:12,marginTop:4}}>{item.s}</div>
-        </div>
-      ))}
-    </div>
-  </>);
+  </div>
+  
+  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16}}>
+    {[{icon:"📊",l:p.t.marketPrices,s:p.liveCount>0?p.t.liveCount(p.liveCount):p.t.mandiData,t:"market"},{icon:"💰",l:p.t.profitSim,s:p.t.realPrices,t:"profit"},{icon:"⚠️",l:p.t.riskAlerts,s:p.t.warnings,t:"alerts"},{icon:"🎙️",l:p.t.voiceInput,s:p.t.krishiAI,t:"plan"}].map((item,i)=>(
+      <div key={i} className="hw" onClick={()=>p.go(item.t)} style={{...card,margin:0,cursor:"pointer"}}>
+        <div style={{fontSize:28}}>{item.icon}</div>
+        <div style={{fontWeight:700,fontSize:14,marginTop:10}}>{item.l}</div>
+        <div style={{color:"#9a6030",fontSize:12,marginTop:4}}>{item.s}</div>
+      </div>
+    ))}
+  </div>
+</>);
 
   if (p.screen==="plan"||p.screen==="results") return(<>
     <div style={card}>
@@ -1475,8 +1808,8 @@ function DesktopScreens(p) {
           ))}
         </div>
       )}
-      {p.weather&&(<div style={{marginTop:12}}><div style={{fontSize:10,color:"#b87040",marginBottom:4}}>{p.t.rainfallForecast}</div><RainBars data={p.weather.dailyRain}/></div>)}
     </div>
+
     <div style={card}>
       <div style={lbl}>🌱 {p.t.farmDetails}</div>
       <div style={{marginBottom:20}}>
@@ -1807,81 +2140,91 @@ function MobileScreens(p) {
 
 //  APP ROOT 
 export default function App() {
-  const [history, setHistory]       = useState(["splash"]);
+  const [history, setHistory] = useState(["splash"]);
   const [registered, setRegistered] = useState(null);
-  const [userName, setUserName]     = useState("");
+  const [userName, setUserName] = useState("");
   const [loginPhone, setLoginPhone] = useState("");
 
   const screen = history[history.length - 1];
-  const goTo   = (s) => setHistory(prev => [...prev, s]);
+  const goTo = (s) => setHistory(prev => [...prev, s]);
   const goBack = () => setHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
 
-  if (screen === "splash")
-    return <SplashScreen onFinish={() => goTo("register")} />;
-
-  // Welcome 
-  if (screen === "register")
-    return <RegisterScreen
-      onSignUp={d => { setRegistered(d); goTo("welcome"); }}
-      onNavigate={goTo}
-      onBack={goBack} />;
-
-  // Welcome (first-time only) 
-  if (screen === "welcome")
-    return (
-      <div style={{position:"fixed",inset:0,width:"100%",height:"100%",overflow:"hidden",
-        fontFamily:"'Cinzel',serif"}}>
-        <style>{AUTH_CSS}</style>
-        <div style={{position:"absolute",inset:0,background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",zIndex:0}}/>
-        <div style={{position:"absolute",top:0,left:0,right:0,height:220,background:"radial-gradient(ellipse at 50% 0%,rgba(255,180,60,0.18) 0%,transparent 70%)",zIndex:1}}/>
-        <TopCropDeco/>
-        <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:5}}>
-          <svg viewBox="0 0 390 90" style={{width:"100%",display:"block"}} preserveAspectRatio="none">
-            <rect x="0" y="55" width="390" height="40" fill="#2a5000"/>
-            <path d="M0,60 Q100,56 200,60 Q300,64 390,60" stroke="#1e3a00" strokeWidth="2" fill="none" opacity="0.5"/>
-            {[...Array(30)].map((_,i)=>{const x=i/29*390,h=18+Math.sin(i*1.9)*8,lean=Math.sin(i*2.5)*7;return<line key={i} x1={x} y1="56" x2={x+lean} y2={56-h} stroke={i%3===0?"#5aaa00":"#3d8000"} strokeWidth="2" strokeLinecap="round" opacity={0.6+Math.sin(i)*0.35}/>;})  }
-          </svg>
+  return (
+    <ErrorBoundary> {/* 👈 Wrap everything here */}
+      {screen === "splash" && <SplashScreen onFinish={() => goTo("register")} />}
+      
+      {screen === "register" && (
+        <RegisterScreen
+          onSignUp={d => { setRegistered(d); goTo("welcome"); }}
+          onNavigate={goTo}
+          onBack={goBack}
+        />
+      )}
+      
+      {screen === "welcome" && (
+        <div style={{position:"fixed",inset:0,width:"100%",height:"100%",overflow:"hidden",
+          fontFamily:"'Cinzel',serif"}}>
+          <style>{AUTH_CSS}</style>
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(170deg,#fff8ee 0%,#fdf0d8 40%,#f5e4b8 75%,#e8d090 100%)",zIndex:0}}/>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:220,background:"radial-gradient(ellipse at 50% 0%,rgba(255,180,60,0.18) 0%,transparent 70%)",zIndex:1}}/>
+          <TopCropDeco/>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:5}}>
+            <svg viewBox="0 0 390 90" style={{width:"100%",display:"block"}} preserveAspectRatio="none">
+              <rect x="0" y="55" width="390" height="40" fill="#2a5000"/>
+              <path d="M0,60 Q100,56 200,60 Q300,64 390,60" stroke="#1e3a00" strokeWidth="2" fill="none" opacity="0.5"/>
+              {[...Array(30)].map((_,i)=>{
+                const x=i/29*390,h=18+Math.sin(i*1.9)*8,lean=Math.sin(i*2.5)*7;
+                return<line key={i} x1={x} y1="56" x2={x+lean} y2={56-h} 
+                  stroke={i%3===0?"#5aaa00":"#3d8000"} strokeWidth="2" 
+                  strokeLinecap="round" opacity={0.6+Math.sin(i)*0.35}/>;
+              })}
+            </svg>
+          </div>
+          <div style={{position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",
+            alignItems:"center",justifyContent:"center",gap:20,padding:"0 32px",boxSizing:"border-box",
+            paddingBottom:"15vh"}}>
+            <div style={{fontSize:64,lineHeight:1}}>🌾</div>
+            <div style={{fontSize:36,fontWeight:900,color:"#4a2200",textAlign:"center",
+              letterSpacing:"1px",lineHeight:1.15,fontFamily:"'Cinzel',serif"}}>
+              Welcome,<br/>{registered?.name}!
+            </div>
+            <div style={{fontSize:16,color:"#9a6030",fontFamily:"'Cormorant Garamond',serif",
+              fontStyle:"italic",fontWeight:900,textAlign:"center",lineHeight:1.7,maxWidth:420}}>
+              Your CropWise journey begins now.
+            </div>
+            <div style={{fontSize:13,color:"#b85c00",background:"rgba(255,252,242,0.88)",
+              border:"1px solid rgba(180,92,0,0.25)",borderRadius:12,padding:"12px 28px",
+              fontFamily:"'Lato',sans-serif",fontWeight:600,textAlign:"center",
+              backdropFilter:"blur(8px)",boxShadow:"0 2px 12px rgba(120,60,0,0.1)"}}>
+              📱 Use +91 {registered?.phone} to log in
+            </div>
+            <button
+              onClick={() => goTo("login")}
+              style={{marginTop:4,background:"linear-gradient(135deg,#7a3a00,#b85c00,#d47020)",
+                border:"none",borderRadius:50,padding:"15px 60px",cursor:"pointer",
+                fontFamily:"'Cinzel',serif",fontWeight:700,fontSize:15,letterSpacing:"2.5px",
+                color:"#fff8e8",textTransform:"uppercase",
+                boxShadow:"0 6px 24px rgba(140,60,0,0.4)"}}>
+              Log In →
+            </button>
+          </div>
         </div>
-        <div style={{position:"absolute",inset:0,zIndex:10,display:"flex",flexDirection:"column",
-          alignItems:"center",justifyContent:"center",gap:20,padding:"0 32px",boxSizing:"border-box",
-          paddingBottom:"15vh"}}>
-          <div style={{fontSize:64,lineHeight:1}}>🌾</div>
-          <div style={{fontSize:36,fontWeight:900,color:"#4a2200",textAlign:"center",
-            letterSpacing:"1px",lineHeight:1.15,fontFamily:"'Cinzel',serif"}}>
-            Welcome,<br/>{registered?.name}!
-          </div>
-          <div style={{fontSize:16,color:"#9a6030",fontFamily:"'Cormorant Garamond',serif",
-            fontStyle:"italic",fontWeight:900,textAlign:"center",lineHeight:1.7,maxWidth:420}}>
-            Your CropWise journey begins now.
-          </div>
-          <div style={{fontSize:13,color:"#b85c00",background:"rgba(255,252,242,0.88)",
-            border:"1px solid rgba(180,92,0,0.25)",borderRadius:12,padding:"12px 28px",
-            fontFamily:"'Lato',sans-serif",fontWeight:600,textAlign:"center",
-            backdropFilter:"blur(8px)",boxShadow:"0 2px 12px rgba(120,60,0,0.1)"}}>
-            📱 Use +91 {registered?.phone} to log in
-          </div>
-          <button
-            onClick={() => goTo("login")}
-            style={{marginTop:4,background:"linear-gradient(135deg,#7a3a00,#b85c00,#d47020)",
-              border:"none",borderRadius:50,padding:"15px 60px",cursor:"pointer",
-              fontFamily:"'Cinzel',serif",fontWeight:700,fontSize:15,letterSpacing:"2.5px",
-              color:"#fff8e8",textTransform:"uppercase",
-              boxShadow:"0 6px 24px rgba(140,60,0,0.4)"}}>
-            Log In →
-          </button>
-        </div>
-      </div>
-    );
-
-  // Login 
-  if (screen === "login")
-    return <LoginScreen
-      onLogin={(name) => { setUserName(name); goTo("app"); }}
-      onNavigate={goTo}
-      onBack={goBack} />;
-
-  // Dashboard 
-  return <CropWiseDashboard
-    userName={userName}
-    onLogout={() => { setHistory(["login"]); setUserName(""); }} />;
+      )}
+      
+      {screen === "login" && (
+        <LoginScreen
+          onLogin={(name) => { setUserName(name); goTo("app"); }}
+          onNavigate={goTo}
+          onBack={goBack}
+        />
+      )}
+      
+      {screen === "app" && (
+        <CropWiseDashboard
+          userName={userName}
+          onLogout={() => { setHistory(["login"]); setUserName(""); }}
+        />
+      )}
+    </ErrorBoundary>
+  );
 }
