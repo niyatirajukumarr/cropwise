@@ -393,30 +393,21 @@ function LoginScreen({ onGetOtp, onNavigate, onBack }) {
   const [error, setError]       = useState("");
 
   const handleOtp = async () => {
-
   setSubmitted(true);
-
-  if (phone.length !== 10) {
-    setError("Please enter a valid 10-digit number");
+  setError("");
+  if (phone.length !== 10) return;
+  setLoading(true);
+  const otp = generateOtp();
+  const result = await sendOtpViaSms(phone, otp);
+  setLoading(false);
+  if (!result.success) {
+    setError(result.message || "Failed to send OTP. Try again.");
     return;
   }
-
-  setLoading(true);
-
-  const otp = generateOtp();
-
-  const result = await sendOtpViaSms(phone, otp);
-
-  if (result.success) {
-    if (onGetOtp) {
-      onGetOtp(phone, otp);
-    }
-    alert("OTP sent to your phone");
-  } else {
-    setError(result.message || "Failed to send OTP");
-  }
-
-  setLoading(false);
+  LoginScreen._pendingOtp   = otp;
+  LoginScreen._pendingExp   = Date.now() + 5 * 60 * 1000;
+  LoginScreen._pendingPhone = phone;
+  onGetOtp && onGetOtp(phone);
 };
 
   return(
