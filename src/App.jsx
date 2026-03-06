@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { registerUser, getUserByPhone, loginWithPassword } from "./userDB";
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -329,12 +330,18 @@ function RegisterScreen({ onSignUp, onNavigate, onBack }) {
   const passwordValid=form.password.length>=6&&/\d/.test(form.password);
   const passwordsMatch=!!(form.password&&form.confirm&&form.password===form.confirm);
   const mismatch=form.confirm.length>0&&form.password!==form.confirm;
-  const handleSignUp=()=>{
-    setSubmitted(true);
-    if(!form.name||!form.phone||!form.password||!form.confirm)return;
-    if(!passwordValid||!passwordsMatch)return;
-    if(onSignUp)onSignUp(form);
-  };
+  const handleSignUp = () => {
+  setSubmitted(true);
+  if (!form.name || !form.phone || !form.password || !form.confirm) return;
+  if (!passwordValid || !passwordsMatch) return;
+
+  const result = registerUser({ name: form.name, phone: form.phone, password: form.password });
+  if (!result.success) {
+    alert(result.error); // or you can show it as an inline error
+    return;
+  }
+  if (onSignUp) onSignUp(form);
+};
   const err={name:submitted&&!form.name,phone:submitted&&!form.phone,pass:submitted&&(!form.password||!passwordValid),confirm:submitted&&(!form.confirm||!passwordsMatch)};
   return(
     <div style={rg.wrapper}>
@@ -384,266 +391,65 @@ function RegisterScreen({ onSignUp, onNavigate, onBack }) {
   );
 }
 
-//  LOGIN SCREEN  — sends real OTP via Fast2SMS
-
-function LoginScreen({ onGetOtp, onNavigate, onBack }) {
-  const [phone, setPhone]       = useState("");
+function LoginScreen({ onLogin, onNavigate, onBack }) {
+  const [form, setForm]           = useState({ username: "", password: "" });
   const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [showPass, setShowPass]   = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleOtp = async () => {
-  setSubmitted(true);
-  setError("");
-  if (phone.length !== 10) return;
-  setLoading(true);
-  const otp = generateOtp();
-  const result = await sendOtpViaSms(phone, otp);
-  setLoading(false);
-  if (!result.success) {
-    setError(result.message || "Failed to send OTP. Try again.");
-    return;
-  }
-  LoginScreen._pendingOtp   = otp;
-  LoginScreen._pendingExp   = Date.now() + 5 * 60 * 1000;
-  LoginScreen._pendingPhone = phone;
-  onGetOtp && onGetOtp(phone);
-};
+  const handleLogin = () => {
+    setSubmitted(true); setError("");
+    if (!form.username || !form.password) return;
+    setLoading(true);
+    setTimeout(() => {
+      const result = loginWithPassword(form.username, form.password);
+      setLoading(false);
+      if (!result.success) { setError(result.error); return; }
+      onLogin && onLogin(result.user.name);
+    }, 500);
+  };
 
-  return(
+  return (
     <div style={rg.wrapper}>
       <style>{AUTH_CSS}</style>
       <div style={rg.bg}/><div style={rg.bgGlow}/>
       <TopCropDeco/>
-      {onBack && <button style={rg.backBtn} onClick={onBack} aria-label="Go back">‹</button>}
-      <div className="reg-title" style={{...rg.titleWrap,paddingBottom:0}}>
+      {onBack && <button style={rg.backBtn} onClick={onBack}>‹</button>}
+      <div className="reg-title" style={rg.titleWrap}>
         <div style={rg.logo}><span style={rg.cropWord}>Crop</span><span style={rg.wiseWord}>Wise</span></div>
         <div style={rg.heading}>Login</div>
-        <div style={rg.sub}>Enter your registered number</div>
+        <div style={rg.sub}>Welcome back, farmer</div>
       </div>
-      <div style={{position:"relative",zIndex:10,margin:"18px 0 10px"}}>
-        <svg viewBox="0 0 110 110" width="100" height="100">
-          <circle cx="55" cy="55" r="52" fill="#eef8d8" stroke="#6aaa20" strokeWidth="2.5"/>
-          <ellipse cx="55" cy="68" rx="28" ry="14" fill="#8B4513"/><ellipse cx="55" cy="64" rx="26" ry="12" fill="#a0622d"/>
-          <circle cx="44" cy="59" r="6" fill="#dd2222"/><circle cx="55" cy="57" r="7" fill="#ff6600"/><circle cx="66" cy="59" r="6" fill="#ffaa00"/>
-          <ellipse cx="48" cy="53" rx="4" ry="7" fill="#33aa00"/><ellipse cx="62" cy="53" rx="4" ry="7" fill="#33aa00"/>
-          <ellipse cx="55" cy="51" rx="5" ry="8" fill="#44cc00" opacity="0.85"/>
-          <circle cx="55" cy="36" r="13" fill="#c87040"/>
-          <ellipse cx="55" cy="26" rx="15" ry="7" fill="#cc3300"/><rect x="40" y="22" width="30" height="8" rx="4" fill="#dd4400"/>
-          <ellipse cx="55" cy="21" rx="9" ry="5" fill="#ee5500"/><circle cx="55" cy="18" r="4" fill="#ff6600"/>
-        </svg>
-      </div>
-      <div className="reg-card" style={{...rg.card,gap:14}}>
-        <div style={{position:"relative"}}>
-          <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-55%)",fontSize:15,zIndex:1,pointerEvents:"none"}}>📞</span>
-          <input
-            className={`login-pill${submitted&&phone.length!==10?" error":""}`}
-            placeholder="10-digit mobile number"
-            type="tel"
-            value={phone}
-            onChange={e=>{setPhone(e.target.value.replace(/\D/g,"").slice(0,10));setError("");}}
-          />
-          {submitted&&phone.length!==10&&<div style={rg.errMsg}>Please enter a valid 10-digit number</div>}
-          {error&&<div style={{...rg.errMsg,marginTop:6}}>{error}</div>}
+      <div className="reg-card" style={rg.card}>
+        <div style={rg.fieldWrap}>
+          <span style={rg.icon}>👤</span>
+          <input className={`reg-input${submitted && !form.username ? " error" : ""}`}
+            placeholder="Full Name (as registered)"
+            value={form.username}
+            onChange={e => { set("username", e.target.value); setError(""); }}/>
+          {submitted && !form.username && <div style={rg.errMsg}>Please enter your name</div>}
         </div>
-        <button className="otp-btn" onClick={handleOtp} disabled={loading}>
-          {loading ? (
-            <span style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
-              <span style={{animation:"spin 1s linear infinite",display:"inline-block",fontSize:16}}>⟳</span>
-              Sending OTP…
-            </span>
-          ) : "Get OTP"}
+        <div style={rg.fieldWrap}>
+          <span style={rg.icon}>🔒</span>
+          <input className={`reg-input${submitted && !form.password ? " error" : ""}`}
+            placeholder="Password"
+            type={showPass ? "text" : "password"}
+            value={form.password}
+            onChange={e => { set("password", e.target.value); setError(""); }}
+            style={{paddingRight: 44}}/>
+          <button style={rg.eyeBtn} onClick={() => setShowPass(v => !v)}>
+            {showPass ? "🙈" : "👁️"}
+          </button>
+          {submitted && !form.password && <div style={rg.errMsg}>Please enter your password</div>}
+        </div>
+        {error && <div style={{...rg.errMsg, marginTop: 2, fontSize: 13}}>{error}</div>}
+        <button className="signup-btn" onClick={handleLogin} disabled={loading}>
+          {loading ? "Logging in…" : "Login"}
         </button>
-        <div style={rg.loginRow}>Don't have an account?{" "}<span style={rg.loginLink} onClick={()=>onNavigate&&onNavigate("register")}>Register</span></div>
-      </div>
-      <div style={rg.bottomScene}>
-        <svg viewBox="0 0 390 105" style={{width:"100%",display:"block"}} preserveAspectRatio="xMidYMax meet">
-          <rect x="0" y="62" width="390" height="45" fill="#2a5000"/>
-          <path d="M0,66 Q100,62 200,66 Q300,70 390,66" stroke="#1e3a00" strokeWidth="2" fill="none" opacity="0.4"/>
-          {[...Array(32)].map((_,i)=>{const x=i/31*390,h=20+Math.sin(i*1.9)*9,lean=Math.sin(i*2.5)*8;return <line key={i} x1={x} y1="64" x2={x+lean} y2={64-h} stroke={i%3===0?"#6aaa00":i%3===1?"#4a8a00":"#88cc20"} strokeWidth="2.2" strokeLinecap="round" opacity={0.6+Math.sin(i)*0.3}/>;})  }
-          {[18,45,72,100,130,158,188].map((x,i)=>(<g key={i}><line x1={x} y1="65" x2={x} y2="55" stroke="#5a8a00" strokeWidth="1.6"/><ellipse cx={x-3} cy="55" rx="4" ry="2.5" fill="#6aaa00" opacity="0.85" transform={`rotate(-20,${x-3},55)`}/><ellipse cx={x+3} cy="53" rx="4" ry="2.5" fill="#78b800" opacity="0.85" transform={`rotate(20,${x+3},53)`}/></g>))}
-          <g transform="translate(235,10)">
-            <line x1="-4" y1="36" x2="-6" y2="54" stroke="#cc4400" strokeWidth="5" strokeLinecap="round"/><line x1="4" y1="36" x2="6" y2="54" stroke="#cc4400" strokeWidth="5" strokeLinecap="round"/>
-            <rect x="-11" y="12" width="22" height="26" rx="6" fill="#ee6600"/>
-            <line x1="-11" y1="18" x2="-22" y2="10" stroke="#cc4400" strokeWidth="4" strokeLinecap="round"/><line x1="11" y1="18" x2="22" y2="10" stroke="#cc4400" strokeWidth="4" strokeLinecap="round"/>
-            <rect x="-14" y="-10" width="28" height="18" rx="6" fill="#c8a060"/><ellipse cx="0" cy="-10" rx="14" ry="5" fill="#d4aa70"/>
-            <circle cx="0" cy="-2" r="11" fill="#c87040"/><ellipse cx="0" cy="-11" rx="16" ry="5" fill="#cc8800"/><ellipse cx="0" cy="-14" rx="9" ry="5" fill="#ddaa00"/>
-          </g>
-          <g transform="translate(305,8)">
-            <line x1="-4" y1="36" x2="-7" y2="56" stroke="#aa3300" strokeWidth="5" strokeLinecap="round"/><line x1="4" y1="36" x2="7" y2="56" stroke="#aa3300" strokeWidth="5" strokeLinecap="round"/>
-            <rect x="-11" y="12" width="22" height="26" rx="6" fill="#cc4400"/>
-            <line x1="11" y1="18" x2="26" y2="8" stroke="#aa3300" strokeWidth="4" strokeLinecap="round"/>
-            {[-5,-2,1,4,7].map((dx,i)=>(<line key={i} x1={26+dx} y1="8" x2={24+dx} y2={-14+i} stroke="#8aaa00" strokeWidth="2.2" strokeLinecap="round"/>))}
-            <ellipse cx="28" cy="-14" rx="10" ry="5" fill="#aacc20" opacity="0.95"/>
-            <line x1="-11" y1="20" x2="-20" y2="28" stroke="#aa3300" strokeWidth="4" strokeLinecap="round"/>
-            <circle cx="0" cy="-2" r="11" fill="#b86030"/><ellipse cx="0" cy="-12" rx="18" ry="6" fill="#ddcc00"/><ellipse cx="0" cy="-15" rx="10" ry="5" fill="#eedd10"/>
-          </g>
-          {[220,240,260,280,295,315,330,350,370].map((x,i)=>{const h=14+Math.sin(i*2.1)*6,lean=Math.sin(i*1.8)*5;return <line key={i} x1={x} y1="64" x2={x+lean} y2={64-h} stroke={i%2===0?"#88cc20":"#5aaa00"} strokeWidth="2.5" strokeLinecap="round" opacity="0.75"/>;})  }
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-LoginScreen._pendingOtp   = null;
-LoginScreen._pendingExp   = null;
-LoginScreen._pendingPhone = null;
-
-//  OTP SCREEN  — verifies real 6-digit OTP with expiry + resend
-
-function OtpScreen({ phone, onLogin, onNavigate, onBack }) {
-  const OTP_LEN = 6;
-  const [otp, setOtp]           = useState(Array(OTP_LEN).fill(""));
-  const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
-  const [shakeKey, setShakeKey] = useState(0);
-
-  const [resendCooldown, setResendCooldown] = useState(30);
-  const [resending, setResending]           = useState(false);
-  useEffect(()=>{
-    if (resendCooldown <= 0) return;
-    const id = setInterval(()=>setResendCooldown(c=>c-1), 1000);
-    return ()=>clearInterval(id);
-  }, [resendCooldown]);
-
-  const boxRefs = useRef(Array(OTP_LEN).fill(null).map(()=>({ current: null })));
-
-  const handleChange = (i, val) => {
-    if (val.length > 1) {
-      const digits = val.replace(/\D/g,"").slice(0, OTP_LEN).split("");
-      const next = [...otp];
-      digits.forEach((d, idx) => { if (i+idx < OTP_LEN) next[i+idx] = d; });
-      setOtp(next);
-      const focusIdx = Math.min(i + digits.length, OTP_LEN - 1);
-      boxRefs.current[focusIdx]?.current?.focus();
-      return;
-    }
-    const v = val.replace(/\D/g,"").slice(-1);
-    const next = [...otp]; next[i] = v; setOtp(next);
-    if (v && i < OTP_LEN - 1) boxRefs.current[i+1]?.current?.focus();
-  };
-
-  const handleKey = (i, e) => {
-    if (e.key === "Backspace" && !otp[i] && i > 0) {
-      boxRefs.current[i-1]?.current?.focus();
-    }
-  };
-
-  const handleLogin = () => {
-    setSubmitted(true);
-    setError("");
-    const code = otp.join("");
-    if (code.length < OTP_LEN) return;
-    setLoading(true);
-
-    //temporary fixed OTP for testing/demo purposes, bypasses actual verification logic
-    if (code === "247782") { onLogin && onLogin(); setLoading(false); return; }
-
-    setTimeout(() => {
-      const stored  = LoginScreen._pendingOtp;
-      const expiry  = LoginScreen._pendingExp;
-      const expired = !expiry || Date.now() > expiry;
-
-      if (!stored) {
-        setError("Session expired. Please go back and request a new OTP.");
-        setLoading(false); return;
-      }
-      if (expired) {
-        setError("OTP has expired (5 min limit). Please request a new one.");
-        LoginScreen._pendingOtp = null;
-        setLoading(false); return;
-      }
-      if (code !== stored) {
-        setError("Incorrect OTP. Please check and try again.");
-        setOtp(Array(OTP_LEN).fill(""));
-        boxRefs.current[0]?.current?.focus();
-        setShakeKey(k => k+1);
-        setLoading(false); return;
-      }
-
-      LoginScreen._pendingOtp   = null;
-      LoginScreen._pendingExp   = null;
-      LoginScreen._pendingPhone = null;
-      setLoading(false);
-      onLogin && onLogin();
-    }, 600);
-  };
-
-  const handleResend = async () => {
-    if (resendCooldown > 0 || resending) return;
-    setResending(true);
-    setError("");
-    const targetPhone = phone || LoginScreen._pendingPhone;
-    if (!targetPhone) { setError("Phone number missing. Go back and try again."); setResending(false); return; }
-    const newOtp = generateOtp();
-    const result = await sendOtpViaSms(targetPhone, newOtp);
-    if (result.success) {
-      LoginScreen._pendingOtp = newOtp;
-      LoginScreen._pendingExp = Date.now() + 5 * 60 * 1000;
-      setOtp(Array(OTP_LEN).fill(""));
-      boxRefs.current[0]?.current?.focus();
-      setResendCooldown(30);
-    } else {
-      setError(result.message || "Resend failed. Try again.");
-    }
-    setResending(false);
-  };
-
-  const showErr = submitted && otp.some(d => d === "");
-
-  return(
-    <div style={rg.wrapper}>
-      <style>{AUTH_CSS + `@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <div style={rg.bg}/><div style={rg.bgGlow}/>
-      <TopCropDeco/>
-      {onBack && <button style={rg.backBtn} onClick={onBack} aria-label="Go back">‹</button>}
-      <div className="reg-title" style={{...rg.titleWrap,paddingBottom:0}}>
-        <div style={rg.logo}><span style={rg.cropWord}>Crop</span><span style={rg.wiseWord}>Wise</span></div>
-        <div style={rg.heading}>Enter OTP</div>
-        <div style={rg.sub}>
-          {phone ? `Sent to +91 ${phone}` : "Sent to your registered number"}
-        </div>
-      </div>
-
-      <div className="reg-card" style={{...rg.card,marginTop:16,alignItems:"center",gap:18}}>
-        <div key={shakeKey} className={shakeKey?"shake":""} style={{display:"flex",gap:10,justifyContent:"center"}}>
-          {otp.map((digit,i)=>(
-            <input
-              key={i}
-              ref={el=>{ boxRefs.current[i].current=el; }}
-              className={`otp-box${digit?" filled":""}${(showErr&&!digit)||error?" err":""}`}
-              type="tel"
-              inputMode="numeric"
-              maxLength={OTP_LEN}
-              value={digit}
-              onChange={e=>handleChange(i,e.target.value)}
-              onKeyDown={e=>handleKey(i,e)}
-              onFocus={e=>e.target.select()}
-            />
-          ))}
-        </div>
-
-        {showErr && <div style={{...rg.errMsg,textAlign:"center"}}>Please enter all {OTP_LEN} digits</div>}
-        {error   && <div style={{...rg.errMsg,textAlign:"center"}}>{error}</div>}
-
-        <button className="verify-btn" onClick={handleLogin} disabled={loading} style={{width:"100%"}}>
-          {loading ? (
-            <span style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}}>
-              <span style={{animation:"spin 1s linear infinite",display:"inline-block",fontSize:16}}>⟳</span>
-              Verifying…
-            </span>
-          ) : "Login"}
-        </button>
-
-        <div style={rg.loginRow}>
-          Didn't receive OTP?{" "}
-          {resendCooldown > 0
-            ? <span style={{color:"#9a8060",fontSize:13}}>Resend in {resendCooldown}s</span>
-            : <span className="resend-link" onClick={handleResend} style={{pointerEvents:resending?"none":"auto"}}>
-                {resending ? "Sending…" : "Resend OTP"}
-              </span>
-          }
+        <div style={rg.loginRow}>Don't have an account?{" "}
+          <span style={rg.loginLink} onClick={() => onNavigate && onNavigate("register")}>Register</span>
         </div>
       </div>
       <BottomScene/>
@@ -2070,20 +1876,12 @@ export default function App() {
   // Login 
   if (screen === "login")
     return <LoginScreen
-      onGetOtp={(phone) => { setLoginPhone(phone); goTo("otp"); }}
-      onNavigate={goTo}
-      onBack={goBack} />;
-
-  // OTP 
-  if (screen === "otp")
-    return <OtpScreen
-      phone={loginPhone}
-      onLogin={() => { setUserName(registered?.name || ""); goTo("app"); }}
+      onLogin={(name) => { setUserName(name); goTo("app"); }}
       onNavigate={goTo}
       onBack={goBack} />;
 
   // Dashboard 
   return <CropWiseDashboard
     userName={userName}
-    onLogout={() => { setHistory(["login"]); setUserName(""); setLoginPhone(""); }} />;
+    onLogout={() => { setHistory(["login"]); setUserName(""); }} />;
 }
